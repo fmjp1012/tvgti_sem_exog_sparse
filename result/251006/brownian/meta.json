@@ -1,0 +1,23 @@
+{
+  "scenario": "brownian",
+  "seed": 0,
+  "config": {
+    "plot": {
+      "latex": true,
+      "font": "Times New Roman",
+      "size": 15
+    },
+    "output": {
+      "root": "result"
+    },
+    "model": {
+      "name": "tvgti_pp_nonsparse_undirected",
+      "params": {
+        "N": 10,
+        "T": 400,
+        "sparsity": 0
+      }
+    },
+    "sweep": null
+  }
+}

@@ -1,0 +1,709 @@
+\documentclass[dvipdfmx]{jsarticle}
+
+\usepackage{amsmath}
+\usepackage{amsfonts}
+\usepackage[dvipdfmx]{graphicx}
+\usepackage{float}
+\usepackage{pdfpages}
+\usepackage{subcaption}
+\usepackage{textgreek}
+\usepackage{multirow}
+\usepackage{array}
+\usepackage{color}
+\usepackage{bm}
+
+\usepackage{amsmath}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{amssymb}
+
+\usepackage{showlabels}
+\usepackage{ulem} % 取り消し線に使用する
+
+\usepackage{tikz}
+\usetikzlibrary{shapes,arrows,positioning, calc}
+\usepackage{tcolorbox}
+\tcbuselibrary{skins, breakable}
+
+% \numberwithin{equation}{section}
+\begin{document}
+% セクション番号を「第1章」の形式に再定義
+\renewcommand{\thesection}{第\arabic{section}章}
+
+% セクション見出しの形式を調整
+\makeatletter
+\renewcommand{\@seccntformat}[1]{\csname the#1\endcsname\quad}
+\makeatother
+
+\begin{titlepage}
+  \centering
+  \vspace*{\fill}
+  {\Large 適応射影劣勾配法に基づく\\時変グラフ学習アルゴリズムに関する研究 \par}
+  \vspace{2cm}
+  {\Large 伊藤 楓馬\par}
+  {\Large 学籍番号: 62001901\par}
+  {\Large 指導教員: 湯川 正裕\par}
+  {\Large 慶應義塾大学 理工学部 電気情報工学科 4年\par}
+  \vspace{1cm}
+  {\Large \today\par}
+  \vspace*{\fill}
+\end{titlepage}
+
+\newpage
+\addcontentsline{toc}{section}{概要}
+\section*{概要}
+時変グラフ構造推定とは、観測される信号からその信号が生成されるグラフ構造を推定する問題である。
+オンライン推定のフレームワークとして、予測-修正アルゴリズムを用いた手法が提案されている。
+しかし、グラフ構造が急変するような状況下においては、収束が遅くなるという問題がある。
+本論文では並列射影の最適化手法を用いて、予測-修正アルゴリズムを改善する手法を提案する。
+また数値実験により、提案法が従来法よりも精度が向上したことを示している。
+
+\newpage
+\addcontentsline{toc}{section}{謝辞}
+\section*{謝辞}
+本研究を進めるにあたり、指導教員の湯川正裕教授には多くの指導を賜
+りました。ここに感謝の意を示します。また、本研究を完遂できたのは周
+囲の全ての方々のおかげです。研究室の先輩方、同輩の皆様、支えてくだ
+さった家族、友人、全ての皆様に深く感謝をいたします。
+
+\newpage
+\setcounter{tocdepth}{3}
+\tableofcontents
+
+\newpage
+\setcounter{page}{1}
+%
+%
+\newpage
+\section{導入}
+近年、グラフ信号処理（Graph Signal Processing: GSP）は、ソーシャルネットワーク、金融市場、脳ネットワーク、電力網、交通ネットワークなど、様々な分野で注目を集めている。GSPは、グラフ構造上に定義された信号（グラフ信号）を解析する枠組みを提供し、その応用範囲はデータ解析や機械学習、最適化分野へと拡大している。グラフ構造はしばしば未知であるため、データからグラフ構造を「学習」すること、すなわちグラフトポロジー同定（Graph Topology Identification: GTI）が重要な課題として認識されてきた。
+
+従来のGTIは、固定（時不変）のグラフ構造を想定していたが、多くの実世界ネットワークは時変的なふるまいを示す。たとえば、金融ネットワークでは市場の急激な変動や経済政策によってノード間の関係が日々変化し、脳ネットワークでは神経活動が時間とともに変動する。こうした非定常な環境下では、単純なバッチ処理による静的なグラフ推定手法では十分に対応できず、逐次的に変化を追跡できるオンラインな手法が求められる。
+
+近年、時変グラフ構造同定（Time-Varying Graph Topology Identification）に関する研究が進められており、非定常データに対してグラフ構造を漸次的に推定するための様々な手法が提案されている。これらの手法は、時系列データから得られる統計量（共分散行列など）を更新しつつ、グラフ構造を漸次的に推定する枠組みを提供する。しかし、従来手法の多くは、グラフ構造が急激に変化する状況や、非線形な動態を有するシナリオでは収束が遅くなるといった問題が残されている。
+
+特に、ガウス型のモデル仮定に基づくGaussian Graphical Model (GGM) や、ノード間の線形関係を仮定する構造方程式モデル(Structural Equation Model: SEM) 、そして平滑性に基づくSmoothness-Based Model (SBM)など、グラフ学習に用いられる各種モデルを時変環境で適用する際には、計算コストや収束速度が課題となる。さらに、オンライン処理が求められる実世界のアプリケーション（通信ネットワークでの異常検知、株式市場でのポートフォリオ最適化、脳波データ解析など）では、低遅延かつ適応的な推定アルゴリズムの実装が不可欠となる。
+
+本研究では、このような時変グラフ構造のオンライン推定問題に対し、既存の予測-修正（Prediction-Correction）フレームワークを拡張し、適応並列射影劣勾配法(Adaptive Parallel Subgradient Projection: APSP)を統合した新たな手法を提案する。APSPは複数の制約集合に対する並列射影操作を通じて高速な収束性を達成する劣勾配ベースの手法であり、時変最適化問題への応用によって、急峻な変化に対しても適応的に動作可能である。本手法では、直近の少数データに基づく並列射影による修正ステップを導入し、過去に蓄積された大量のデータに依存せずとも、高精度かつ収束速度の優れたグラフ構造推定を達成することを目指す。
+
+本論文の構成は以下のとおりである。第2章では本研究で用いる数学的準備と記法を示し、従来手法の問題点を整理する。第3章では提案手法のアイデアと定式化を詳述し、第4章で実験設定と数値実験を行い、提案法の有効性を示す。第5章で結論と今後の展望を述べる。
+
+\newpage
+\section{準備}
+%
+\subsection{表記法}
+以下、本論文で使用する表記法について説明する。
+
+$\mathbb{N}$は非負整数の集合を表す。$\mathbb{N}_{+}$は$\mathbb{N}$からゼロを除いた集合、すなわち$\mathbb{N}_{+} = \mathbb{N} \setminus \{0\}$である。
+ベクトル$\mathbf{x}$の第$i$成分は$x(i)$と記す。行列$\mathbf{X}$の$(i, j)$成分は$X(i, j)$と表す。
+行列の転置は${}^\top$を用いて示し、行列の擬似逆行列は${}^\dagger$で表す。行列のトレースは$\operatorname{tr}(\cdot)$で示し、行列をベクトル化する操作は$\operatorname{vec}(\cdot)$で表す。
+$\mathbf{0}_N$は全ての要素がゼロである$N$次元ベクトルを、$\boldsymbol{1}_N$は全ての要素が1である$N$次元ベクトルを表す。$\mathbf{I}_N$は$N$次単位行列を示す。
+$\otimes$はクロネッカー積を、$\odot$はアダマール積（要素ごとの積）を、$\oslash$はアダマール除算（要素ごとの除算）を表す。${}^\circ$はアダマールべき乗（要素ごとのべき乗）を示す。
+$[\, \cdot \, ]_{+}$は最大値を要素ごとに計算する操作であり、具体的には$[\, \mathbf{x} \,]_{+} = [\max(0, x(1)), \max(0, x(2)), \dots \max(0, x(n))]^\top$を意味する。
+$\iota_{\mathcal{X}}(\cdot)$は凸集合$\mathcal{X}$の指示関数であり、$\mathbf{x} \in \mathcal{X}$のとき$\iota_{\mathcal{X}}(\mathbf{x}) = 0$、それ以外の場合は$+\infty$となる。
+$f \circ g(\cdot)$は関数$f(\cdot)$と$g(\cdot)$の合成を示す。$f(\mathbf{x}; t)$は時間$t$でパラメータ化された関数であり、引数は$\mathbf{x} \in \mathbb{R}^N$である。
+$\nabla_{\mathbf{x}} f(\mathbf{x}; t)$は点$(\mathbf{x}; t)$における関数$f(\mathbf{x}; t)$の$\mathbf{x}$に関する勾配を表す。$\nabla_{\mathbf{x}\mathbf{x}} f(\mathbf{x}; t)$は同じ点でのヘシアン（2次微分行列）を示す。
+$\nabla_{t \mathbf{x}} f(\mathbf{x}; t)$は勾配の時間微分であり、これは$\nabla_{\mathbf{x}} f(\mathbf{x}; t)$の時間$t$に関する偏微分である。これは目的関数の混合1次偏導関数ベクトルを示す。
+$| \cdot |_p$はベクトルの$\ell_p$ノルム、または行列をベクトル化した場合の$\ell_p$ノルムを表す。$\| \cdot \|_F$は行列のフロベニウスノルムを示す。添字のないノルム$\| \cdot \|$はスペクトルノルムを表す。
+
+%
+%
+\subsection{グラフ構造推定}
+グラフ構造推定（Graph Topology Identification: GTI）とは、以下の(\ref{eq:gti})式のような逆問題として定式化される\cite{tvgti-pc}。 
+%
+\begin{align}
+  \mathbf{S} = \mathcal{F}^{-1}(\mathbf{X}) \label{eq:gti}
+\end{align}
+%
+ここで、$\mathbf{X}$は観測された信号の行列、$\mathbf{S}$はグラフ構造を表現する行列（隣接行列など）、$\mathbf{S}$からデータ$\mathbf{X}$が生成される過程を$\mathcal{F}(\cdot)$で表す。データの生成過程は$\mathbf{X} = \mathcal{F}(\mathbf{S})$と表現される。
+%
+\subsubsection{観測される信号}
+本資料内でのグラフ構造推定における観測されるデータについて説明する。
+時刻$t$で観測する信号は$N$個のノードそれぞれに対応する実数値であり、まとめてベクトル$\mathbf{x}_t \in \mathbb{R}^N$で表現する。
+また$T$回に渡って得られたデータをまとめて行列$\mathbf{X} = [\mathbf{x}_1 \dots \mathbf{x}_T] \in \mathbb{R}^{N \times T}$で表現する。
+%
+\subsubsection{構造方程式モデル(Structural Equation Model: SEM)}
+構造方程式モデル（Structural Equation Model: SEM）とは観測される信号$\mathbf{x}_t$とグラフ構造を表す隣接行列$\mathbf{S}$の関係に対して、(\ref{eq:sem_entrywise})式のような線形モデルが成り立つと仮定をおくモデルである\cite{tvgti-pc}。
+\begin{align}
+  x_t(i) = \sum_{j \neq i} S(i, j) x_t(j) + \varepsilon_t(i), \quad t = 1, \dots, T \label{eq:sem_entrywise}
+\end{align}
+
+ここでノード数を$N$, 時刻$t$での信号をベクトル$\mathbf{x}_t \in \mathbb{R}^N$, 隣接行列を$\mathbf{S}$, ガウスノイズを$\bm{\varepsilon}_t \sim \mathcal{N}(\mathbf{0}_N, \sigma^2 \mathbf{I}_N)$とする。
+また想定するグラフは無向グラフであり、自己ループが存在しないとする。このとき、隣接行列$\mathbf{S}$は以下の条件を満たす。
+%
+\begin{align}
+  \mathbf{S} &\in \mathcal{S} := \{\mathbf{A} \in \mathbb{R}^{N \times N} \,|\, \mathrm{diag(\mathbf{A}) = \mathbf{0},\, \mathbf{A} = \mathbf{A^{\top}}} \} \label{s}
+\end{align}
+
+ここで(\ref{eq:sem_entrywise})式は、(\ref{eq:sem_matrix})式のように表現できる。
+\begin{align}
+  \mathbf{x}_t &= \mathbf{S} \, \mathbf{x}_t + \bm{\varepsilon}_t, \quad t = 1, \dots, T \label{eq:sem_matrix}
+\end{align}
+%
+
+グラフ構造を表現する隣接行列$\mathbf{S}$が時不変である場合の推定問題を(\ref{eq:stat_op})式で表される最適化問題として表現する。% Changed
+$f(\mathbf{S})$は損失関数、$g(\mathbf{S})$は正則化項である。
+%
+\begin{align}
+  \min_{\mathbb{\mathbf{S} \in R^{N \times N}}} f(\mathbf{S}) + g(\mathbf{S}) \label{eq:stat_op}
+\end{align}
+%
+(\ref{eq:sem_matrix})式のモデルに対して損失関数$f(\mathbf{S})$は(\ref{eq:stat_loss})式のように表現できる。 % Changed
+また$\mathbf{S}$に関する制約を指示関数$\iota_\mathcal{S}(\mathbf{S})$を用いて、(\ref{eq:stat_reg})式として表現する。% Changed
+%
+\begin{align}
+  f(\mathbf{S}) &:= \frac{1}{2T} \|\mathbf{X} - \mathbf{S}\mathbf{X}\|_F^2 \label{eq:stat_loss}\\
+  g(\mathbf{S}) &:= \iota_\mathcal{S}(\mathbf{S}) \label{eq:stat_reg}
+  % \mathcal{S} &:= \{\mathbf{A} \in \mathbb{R}^{N \times N} \,|\, \mathrm{diag(\mathbf{A}) = \mathbf{0},\, \mathbf{A} = \mathbf{A^{\top}}} \} \label{limit_S}
+\end{align}
+%
+
+\subsection{予測-修正アルゴリズム}
+\begin{figure}[h]
+  \begin{minipage}[t]{.4\linewidth}
+      \vspace{-15em}
+      \begin{tcolorbox}[colback=gray!10,title=予測ステップ]
+          コスト関数の変化を予測し更新
+      \end{tcolorbox}
+      \begin{tcolorbox}[colback=gray!10,title=修正ステップ]
+          観測された全てのデータに基づき\\勾配法により更新
+      \end{tcolorbox}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{.55\linewidth}
+      \begin{tikzpicture}[
+          node distance=.5cm,
+          auto,
+          block/.style={rectangle, draw, fill=gray!20, text width=4cm, text centered, rounded corners, minimum height=1cm},
+          block2/.style={rectangle, draw, fill=blue!30, text width=3cm, text centered, rounded corners, minimum height=1cm},
+          arrow/.style={draw, -latex'},
+          line/.style={draw, -}
+      ]
+          % Nodes
+          \node [block] (input1) {推定ベクトル$\mathbf{s}_t$};
+          \node [block2, below=of input1] (predict) {予測ステップ};
+          \node [block2, below=of predict] (correct) {修正ステップ};
+          \node [block, below=of correct] (output) {推定ベクトル$\mathbf{s}_{t+1}$};
+          
+          % Input2 node positioned between predict and correct
+          \node [block, right=2cm of predict, yshift=-.75cm] (input2) {時刻$t+1$で得られた信号値$\mathbf{x}_{t+1}$};
+      
+          % Arrows
+          \path [arrow] (input1) -- (predict);
+          \path [arrow] (predict) -- (correct);
+          \path [line] (input2) -| ($(predict)!0.5!(correct)$);
+          \draw[->] ($(input2.west) + (-0.5, 0)$) -- (input2.west);
+          \path [arrow] (correct) -- (output);
+      \end{tikzpicture}
+  \end{minipage}
+  \vspace{1em}
+  \caption{既存法のフロー図}
+\end{figure}
+%
+\subsubsection{定式化}
+(\ref{eq:stat_loss})式で表される時不変な場合のSEM(構造方程式モデル: SEM)に関する損失関数$f(\mathbf{S})$を変形し、(\ref{stat_loss_3})式のように経験的共分散行列$\mathbf{\hat{\Sigma}}$で表現する。
+経験的共分散行列$\mathbf{\hat{\Sigma}}$は(\ref{stat_sigma})式のように定義される。% Changed
+\begin{align}
+  f(\mathbf{S}) &= \frac{1}{2T} \| \mathbf{X} - \mathbf{S} \mathbf{X} \|_F^2 \label{stat_loss_2}\\
+  &= \frac{1}{2} \left[ \text{tr}(\mathbf{S}^2 \mathbf{\hat{\Sigma}}) - 2\text{tr}(\mathbf{S} \mathbf{\hat{\Sigma}}) + \text{tr}(\mathbf{\hat{\Sigma}}) \right] \label{stat_loss_3} \\
+  \mathbf{\hat{\Sigma}} &:= \frac{1}{T} \sum_{t=1}^T \mathbf{x}_t \mathbf{x}_t^\top \label{stat_sigma}
+\end{align}
+%
+
+この経験的共分散行列$\mathbf{\hat{\Sigma}}$を(\ref{tv_sigma_t})式のように再帰的に更新することで、% Changed
+(\ref{tv_loss})式を時変に対応させる。% Changed
+また正則化の役割を果たす関数$g(\mathbf{S}; t)$は(\ref{tv_reg})式のように表現する。% Changed
+\begin{align}
+  \mathbf{\hat{\Sigma}}_t &:= \gamma \mathbf{\hat{\Sigma}}_{t-1} + (1 - \gamma) \mathbf{x}_t \mathbf{x}_t^\top \quad t = 1, 2, \dots \label{tv_sigma_t} \\
+  f(\mathbf{S}; t) &:= \frac{1}{2} \left[ \text{tr}\left(\mathbf{S}^2 \mathbf{\hat{\Sigma}}_t\right) - 2 \text{tr}\left(\mathbf{S} \mathbf{\hat{\Sigma}}_t\right) + \text{tr}\left(\mathbf{\hat{\Sigma}}_t\right) \right] \label{tv_loss} \\
+  g(\mathbf{S}; t) &:= \iota_\mathcal{S}(\mathbf{S}) \label{tv_reg}
+\end{align}
+%
+
+ここで(\ref{dup_matrix}), (\ref{eli_matrix})式に示す重複行列(Duplication matrix)$\mathbf{D}_h$、除外行列(Elimination matrix)$\mathbf{E}_h$を用いて、% Changed
+行列$\mathbf{S}$をベクトル$\mathbf{s}$に変換する。
+この変換は隣接行列$\mathbf{S}$に関する(\ref{s})式の制約を用いて変数の数を削減するために行われる。% Changed
+また制約条件をアルゴリズム中で明示的に扱う必要がなくなる。
+\begin{align}
+  \text{vec}(\mathbf{S}) &= \mathbf{D}_h \mathbf{s} \in \mathbb{R}^{N^2} \label{dup_matrix}\\
+  \mathbf{s} &= \mathbf{E}_h \text{vec}(\mathbf{S}) \in \mathbb{R}^{\frac{N(N-1)}{2}} \label{eli_matrix}
+\end{align}
+%
+
+以上の変数の削減により、(\ref{tv_loss})式の損失関数$f(\mathbf{s};t)$は(\ref{tv_loss2})式のように表現される。% Changed
+$\mathbf{Q}_t, \mathbf{\hat{\sigma}}_t, \hat{\sigma}_t$はそれぞれ(\ref{q}), (\ref{bf_sigma}), (\ref{sigma})式で定義される。% Changed
+%
+\begin{align}
+  f(\mathbf{s};t) &:= \frac{1}{2} \mathbf{s}^\top \mathbf{Q}_t \mathbf{s} - 2\mathbf{s}^\top \mathbf{\hat{\sigma}}_t + \frac{1}{2} \mathbf{\hat{\sigma}}_t \label{tv_loss2}\\
+  \mathbf{Q}_t &:= \mathbf{D}_h^\top (\mathbf{\hat{\Sigma}}_t \otimes \mathbf{I}) \mathbf{D}_h \label{q}\\
+  \mathbf{\hat{\sigma}}_t &:= \mathbf{E}_h\mathbf{\hat{\Sigma}}_t \label{bf_sigma}\\
+  \hat{\sigma}_t &:= \text{tr}(\mathbf{\hat{\Sigma}}_t) \label{sigma}
+\end{align}
+%
+
+(\ref{pred}), (\ref{corr})式にそれぞれ予測ステップ、修正ステップの更新式を示す。ただし予測ステップでは(\ref{pred_aprox})式のように近似を行う。% Changed
+また(\ref{tv_loss2})式より、損失関数$f(\mathbf{s};t)$の勾配$\nabla_s f(\mathbf{s};t)$、ヘシアン$\nabla_{ss} f(\mathbf{s};t)$、混合1次偏導関数$\nabla_{ts} f(\mathbf{s};t)$は(\ref{grad}), (\ref{hessian}), (\ref{mixed})式で表現される。% Changed
+$\alpha_t, \beta_t$はそれぞれのステップにおける固定ステップサイズである。
+\begin{align}
+  \mathbf{\hat{s}}^{p+1} &= \mathbf{\hat{s}}^{p} - \alpha_{t} \left[ \nabla_{s} f \left( \mathbf{\hat{s}}_t ; t \right) \right]+ \nabla_{ss} f \left( \mathbf{\hat{s}}_t ; t \right) \left( \mathbf{\hat{s}}^{p} - \mathbf{\hat{s}}_{t} \right)+ h \nabla_{ts} f \left( \mathbf{\hat{s}}_{t} ; t \right) \label{pred}\\
+  \mathbf{\hat{s}}^{c+1} &= \mathbf{\hat{s}}^{c} - \beta_{t} \nabla_s f \left( \mathbf{\hat{s}}^{c} ; t+1 \right) \label{corr}
+\end{align}
+\begin{align}
+  \hat{f}(\mathbf{s}; t + 1) &= \frac{1}{2} \mathbf{s}^\top \nabla_{ss} f(\mathbf{\hat{s}}_t; t) \mathbf{s} \notag\\
+  &+ \left[ \nabla_s f(\mathbf{\hat{s}}_t; t) + h \nabla_{ts} f(\mathbf{\hat{s}}_t; t) \mathbf{s} - \nabla_{ss} f(\mathbf{\hat{s}}_t; t) \mathbf{\hat{s}_t} \right]^\top \mathbf{s} \label{pred_aprox}
+\end{align}
+\begin{align}
+  \nabla_s f(\mathbf{s};t) &= \mathbf{Q}_t \mathbf{s} - 2 \mathbf{\hat{\sigma}}_t \label{grad}\\
+  \nabla_{ss} f(\mathbf{s};t) &= \mathbf{Q}_t \label{hessian}\\
+  \nabla_{ts} f(\mathbf{s},t) &= (\mathbf{Q}_t - \mathbf{Q}_{t-1}) \mathbf{s} - 2 (\mathbf{\hat{\sigma}}_t - \mathbf{\hat{\sigma}}_{t-1}) \label{mixed}
+\end{align}
+%
+
+\begin{algorithm}
+  \caption{Prediction-Correction Algorithm \cite{tvgti-pc}}
+  \begin{algorithmic}[1]
+  \Require Feasible $\hat{\mathbf{S}}_0$, $f(\mathcal{S}; t_0)$, $P$, $C$, operators $\hat{\mathcal{T}}$ and $\mathcal{T}$
+  \State $\hat{\mathbf{s}}_0 \leftarrow$ ad-hoc vectorization of $\hat{\mathbf{S}}_0$
+  \State // \textit{Prediction}
+  \For{$t = 0, 1, \ldots$}
+      \State Initialize the predicted variable as $\hat{\mathbf{s}}^0 = \hat{\mathbf{s}}_t$
+      \For{$p = 0, 1, \ldots, P - 1$}
+          \State Predict $\hat{\mathbf{s}}^{p+1}$ with (15)
+      \EndFor
+      \State Set the predicted variable $\hat{\mathbf{s}}_{t+1|t} = \hat{\mathbf{s}}^P$
+      
+      \State \textit{// Correction - time $t + 1$: new data arrive}
+      \State Initialize the corrected variable as $\hat{\mathbf{s}}^0 = \hat{\mathbf{s}}_{t+1|t}$
+      \For{$c = 0, 1, \ldots, C - 1$}
+          \State Predict $\hat{\mathbf{s}}^{c+1}$ with (18)
+      \EndFor
+      \State Set the corrected variable $\hat{\mathbf{s}}_{t+1} = \hat{\mathbf{s}}^C$
+  \EndFor
+  \end{algorithmic}
+\end{algorithm}
+%
+\newpage
+\subsection{適応並列射影劣勾配法(Adaptive Parallel Subgradient Projection: APSP)}
+    
+適応並列射影劣勾配法(Adaptive Parallel Subgradient Projection: APSP)では、以下のように定義される閉凸集合列
+\[
+  \{ C_\ell^{(k)} \subset \mathcal{H} \mid \ell \in I_k、\, k \in \mathbb{N} \}
+\]
+と、対応する重み
+\(
+  \{ w^{(\ell)} > 0 \mid \ell \in I_k、\, \sum_{\ell \in I_k} w^{(\ell)} = 1 \}
+\)
+を用意し、それらの近似的距離関数（あるいはその上界となる劣勾配）を組み合わせることで
+定義される汎関数%
+\[
+  \varphi_k(x) \;:=\;
+  \begin{cases}
+    \displaystyle
+    \sum_{\ell \in I_k} \dfrac{w^{(\ell)} \, d_{C_\ell^{(k)}}(h_k)}{\nu_k}
+      \, d_{C_\ell^{(k)}}(x),
+    & \text{if } \nu_k \;=\; \sum_{\ell\in I_k} w^{(\ell)} \, d_{C_\ell^{(k)}}(h_k) \;\neq\; 0、 \\[8pt]
+    0、
+    & \text{otherwise}、
+  \end{cases}
+\]
+により、次の反復則を構成する。ただし、\(d_{C_\ell^{(k)}}(\cdot)\)は集合\(C_\ell^{(k)}\)からの距離
+またはその近似的評価とみなす。
+    
+この適応並列射影劣勾配法(Adaptive Parallel Subgradient Projection: APSP)では、各ステップでの更新規則を劣勾配法的に定義し、かつ、
+更新後の推定ベクトル\(h_{k+1}\)を所定の閉凸集合への射影演算\(\mathrm{P}_K(\cdot)\)によって制限することで、
+次の形式の反復を与える（\(\mu_k\)はステップサイズを表す）:
+\[
+  h_{k+1}
+  \;=\;
+  \mathrm{P}_{K}
+  \Bigl(
+    h_{k}
+    \;-\;
+    \mu_k \, \nabla \varphi_k\bigl(h_{k}\bigr)
+  \Bigr),
+\]
+ここで、\(\nabla \varphi_k(h_k)\)は\(\varphi_k\)の劣勾配（もしくはガトー微分が存在する場合はその勾配）を表す。
+また、適切な有界性やステップサイズ条件などを課すと、収束や収束速度に関する
+各種理論的性質が保証されることが示されている。
+    
+\newpage
+\section{提案法}
+\subsection{アイデア}
+従来法ではパラメータの設定によっては収束が遅くなる場合があるため、更新過程における収束速度を最適化するための手法が求められる。特に、予測ステップが収束速度に寄与しないような状況においては、過去のデータに依存しないアルゴリズムを用いるほうが有効な場合がある。また、グラフ構造が急激に変化するケースに対応するためには、1回の更新で使用するデータ量を適切に減らす手法が必要となる。本研究では、全てのノード間の最短経路を求める際に広く用いられる適応並列射影劣勾配法(Adaptive Parallel Subgradient Projection: APSP)を適用しながら更新を進めることで、推定精度と更新効率のバランスを図ることを目的としている。
+
+\subsection{提案手法の優位性}
+本手法の大きな特徴として、ベクタライズによる変数削減を行わないために、有向グラフへも容易に対応が可能である点が挙げられる。さらに、更新方向を1つのデータに対して逐次的に計算する方式を採用しているため、複数のデータを同時に処理する並列計算を実行できる。これにより、大規模データを扱う場合においても効率よく更新を行うことが可能となり、結果として動的に変化するグラフ構造の推定に対しても高い適応能力を発揮する。
+
+%
+\begin{figure}[h]
+  \begin{minipage}[t]{.4\linewidth}
+      \vspace{-9em}
+      \begin{tcolorbox}[colback=gray!10,title=並列射影ステップ]
+        直近の一定数のデータに基づき\\劣勾配射影により更新
+      \end{tcolorbox}
+  \end{minipage}
+  \hfill
+  \begin{minipage}[t]{.55\linewidth}
+      \begin{tikzpicture}[
+          node distance=.5cm,
+          auto,
+          block/.style={rectangle, draw, fill=gray!20, text width=4cm, text centered, rounded corners, minimum height=1cm},
+          block3/.style={rectangle, draw, fill=red!40, text width=3cm, text centered, rounded corners, minimum height=1cm},
+          arrow/.style={draw, -latex'},
+          line/.style={draw, -}
+      ]
+          % Nodes
+          \node [block] (input1) {推定行列$\mathbf{\hat{S}}_t$};
+          \node [block3, below=of input1] (parallel) {並列射影ステップ};
+          \node [block, below=of parallel] (output) {推定行列$\mathbf{\hat{S}}_{t+1}$};
+          % Arrows
+          \path [arrow] (input1) -- (parallel);
+          \path [arrow] (parallel) -- (output);
+      \end{tikzpicture}
+  \end{minipage}
+  \vspace{1em}
+  \caption{提案手法のフロー図}
+\end{figure}
+%
+
+\newpage
+\subsection{提案手法の定式化}
+APSPのSEM(構造方程式モデル: SEM)への適用を考える。(\ref{window_set})式のようにインデックス集合$\mathcal{I}_t$を定義する。
+この集合は時刻$t$における推定の更新に利用するデータのインデックスを表す。また$q$は並列処理を行うプロセッサーの数を表す。
+\begin{align}
+  \iota &\in \mathcal{I}_t := \{t, t-1, \dots, t-q+1\} \label{window_set}
+\end{align}
+$r \in \mathbb{N}_+$はプロセッサーごとに使用する観測信号の数を表す。(\ref{X})式のように$r$個の観測信号をまとめて行列$\mathbf{X}_\iota \in \mathbb{R}^{N \times r}$で表現する。
+\begin{align}
+  \mathbf{X}_\iota &:= [\mathbf{x}_\iota \, \mathbf{x}_{\iota - 1} \dots \mathbf{x}_{\iota - r + 1}] \label{X}
+\end{align}
+プロセッサー$\iota$における観測信号$\mathbf{X}_\iota$に関して、(\ref{C})式のような集合を考える。% Changed
+この集合を観測信号$\mathbf{X}_\iota$から予測される推定行列の候補と考えられ、$\rho$は候補の集合の大きさを調節するパラメータとなる。
+%
+\begin{equation}
+  C_\iota(\rho) := \left\{ \mathbf{S} \in \mathbb{R}^{N \times N} \, \left| \, \frac{1}{2}\|\mathbf{X}_\iota - \mathbf{S}\mathbf{X}_\iota\|_2^2 \leq \rho \right. \right\} \label{C}
+\end{equation}
+%
+また以下に示す(\ref{g})式のような関数$g_\iota(\mathbf{S})$を定義することで、集合$C_\iota(\rho)$を(\ref{C_level})式のようにレベルセットを用いて表現できる。% Changed
+\begin{align}
+  g_\iota(\mathbf{S}) &:= \frac{1}{2}\|\mathbf{X}_\iota - \mathbf{S}\mathbf{X}_\iota\|_2^2 - \rho \label{g}\\
+  C_\iota(\rho) &= \text{lev}_{\leq 0} g_\iota = \left\{ \mathbf{S} \in \mathbb{R}^{N \times N} : g_\iota(\mathbf{S}) \leq 0 \right\} \label{C_level}
+\end{align}
+(\ref{C}), (\ref{g}), (\ref{C_level})式に基づいて、(\ref{nabla_g}), (\ref{Tsp})式のように劣勾配射影を定めることができる。% Changed
+\begin{align}
+  \nabla g_\iota(\mathbf{S}) &= \mathbf{S}\mathbf{X}_\iota{\mathbf{X}_\iota}^\top - \mathbf{X}_\iota{\mathbf{X}_\iota}^\top \label{nabla_g}\\
+  T_{\text{sp}(g_\iota)}(\mathbf{S}) &:= \begin{cases} 
+  \mathbf{S} - \frac{g_\iota(\mathbf{S})}{\|\nabla g_\iota(\mathbf{S})\|^2} \nabla g_\iota(\mathbf{S}) & \text{if } g_\iota(\mathbf{S}) > 0, \\
+  \mathbf{S} & \text{otherwise}. \label{Tsp}
+  \end{cases}
+\end{align}
+(\ref{parallel})式のような並列射影を考えることができる。% Changed
+%
+\begin{align}
+  \mathbf{\hat{S}}_{t+1} &:= \mathbf{\hat{S}}_t + \mu_t \left( \sum_{\iota \in \mathcal{I}_t} w_\iota^{(t)} T_{\text{sp}(g_\iota)}(\mathbf{\hat{S}}_t) - \mathbf{\hat{S}}_t \right) \label{parallel}
+\end{align}
+%
+初期推定行列 $\mathbf{\hat{S}}_0$ は，次元が $N \times N$ の実数行列として与えられる．すなわち，$\mathbf{\hat{S}}_0 \in \mathbb{R}^{N \times N}$ である．
+時刻 $t$ の推定更新において，ウィンドウに含まれるすべてのインデックス $\iota \in \mathcal{I}_t$ について，重み $w_\iota^{(t)}$ は正の実数となるように設定する．
+先に挙げた重み $w_\iota^{(t)}$ を，$\iota \in \mathcal{I}_t$ のすべてにわたって合計すると 1 となるように正規化する．
+更新係数（学習率）$\mu_t$ は $0$ より大きく $2 \mathcal{M}_t$ より小さい範囲に属する．ここで$\mathcal{M}_t$は(\ref{eq:apsp_M})式で定義される．% Changed
+\begin{align}
+  % \mathbf{\hat{S}}_0 &\in \mathbb{R}^{N \times N} \label{apsp_s0}\\
+  % w_\iota^{(t)} &> 0, \forall \iota \in \mathcal{I}_t \label{apsp_w}\\
+  % \sum_{\iota \in \mathcal{I}_t} w_\iota^{(t)} &= 1 \label{apsp_w_sum}\\
+  % \mu_t &\in (0, 2 \mathcal{M}_t) \label{apsp_mu}\\
+  \mathcal{M}_t &:= 
+  \begin{cases} 
+    \frac{\sum_{\iota \in \mathcal{I}_t} w_\iota^{(t)} \left\| T_{\text{sp}(g_\iota)}(\mathbf{\hat{S}}_t) - \mathbf{\hat{S}}_t \right\|^2}{\left\| \sum_{\iota \in \mathcal{I}_t} w_\iota^{(t)} T_{\text{sp}(g_\iota)}(\mathbf{\hat{S}}_t) - \mathbf{\hat{S}}_t \right\|^2} & \text{if } \mathbf{\hat{S}}_t \notin \cap_{\iota \in \mathcal{I}_t} C_\iota(\rho), \\
+    1 & \text{otherwise}. \label{eq:apsp_M}
+  \end{cases}
+\end{align}
+%
+\begin{algorithm}
+  \caption{Proposed Algorithm}
+  \begin{algorithmic}[1]
+  \Require The number of parallel processors $q \in \mathbb{N}_+$, the control sequence $\mathcal{I}_t$, the weights $w_\iota^{(t)}$, the input $\mathbf{X}_\iota$, $\forall \iota \in \mathcal{I}_t, \forall t \in \mathbb{N}$, $\rho$, and any $\mathbf{\hat{S}}_0 \in \mathcal{S}$.
+  \For{$t = 0, 1, \ldots$}
+      \ForAll{$\iota \in \mathcal{I}_t$}
+          \State $g_l(\mathbf{\hat{S}}_t) = \frac{1}{2} \| \mathbf{X}_\iota - \mathbf{\hat{S}}_t \mathbf{X}_\iota \|^2 - \rho$
+          \State $\nabla g_\iota(\mathbf{\hat{S}}_t) = \mathbf{\hat{S}}_t \mathbf{X}_\iota \mathbf{X}_\iota^\top - \mathbf{X}_\iota \mathbf{X}_\iota^\top$
+          \State $T_{\text{sp}(g_\iota)}(\mathbf{S}) = \begin{cases} 
+            \mathbf{S} - \frac{g_\iota(\mathbf{S})}{\|\nabla g_\iota(\mathbf{S})\|^2} \nabla g_\iota(\mathbf{S}) & \text{if } g_\iota(\mathbf{S}) > 0, \\
+            \mathbf{S} & \text{otherwise}. \label{T}
+            \end{cases}$
+      \EndFor
+      \State $\mathcal{M}_t = 
+      \begin{cases} 
+        \frac{\sum_{\iota \in \mathcal{I}_t} w_\iota^{(t)} \left\| T_{\text{sp}(g_\iota)}(\mathbf{\hat{S}}_t) - \mathbf{\hat{S}}_t \right\|^2}{\left\| \sum_{\iota \in \mathcal{I}_t} w_\iota^{(t)} T_{\text{sp}(g_\iota)}(\mathbf{\hat{S}}_t) - \mathbf{\hat{S}}_t \right\|^2} & \text{if } \mathbf{\hat{S}}_t \notin \cap_{\iota \in \mathcal{I}_t} C_\iota(\rho), \\
+        1 & \text{otherwise}. \label{apsp_M}
+      \end{cases}$
+      \State Choose $\mu_t \in (0, 2\mathcal{M}_t)$
+      \State $\mathbf{\hat{S}}_{t+1} = P_{\mathcal{S}}(\mathbf{\hat{S}}_t + \mu_t \left( \sum_{\iota \in I_t} w_\iota^{(t)} T_{\text{sp}(g_\iota)}(\mathbf{\hat{S}}_t) - \mathbf{\hat{S}}_t \right))$
+  \EndFor
+  \end{algorithmic}
+\end{algorithm}
+%
+
+\newpage
+\section{実験設定}
+本節では、数値実験におけるパラメータ設定について詳細に説明する。以下に示す各パラメータは、時変構造方程式モデル(Time Varying Structural Equation Model: TV-SEM)のシミュレーションおよびオンライン推定アルゴリズムの性能評価に用いられたものである。
+
+\subsection{シミュレーションパラメータ}
+シミュレーションに使用した主なパラメータは以下の表\ref{tab:simulation_params}に示す。これらのパラメータは、グラフ構造の生成およびデータのシミュレーションにおいて重要な役割を果たす。
+    
+\begin{table}[H]
+    \centering
+    \caption{シミュレーションパラメータ}
+    \label{tab:simulation_params}
+    \begin{tabular}{c|p{8cm}}
+        \hline
+        \textbf{パラメータ} & \textbf{説明} \\
+        \hline
+        $N$  & ノード数 \\
+        $T$ & 時間ステップ数 \\
+        \texttt{max\_weight} & 隣接行列の非ゼロ要素の絶対値の最大値を0.5に制限 \\
+        $\texttt{variance\_e}$ & ノイズの分散 \\
+        $K$ & 変化点の数 \\
+        \hline
+    \end{tabular}
+\end{table}
+    
+\subsection{初期隣接行列の生成}
+初期隣接行列$\mathbf{S}_0$は、対称性を持たせるために以下の手順で生成された。
+\begin{enumerate}
+    \item 隣接行列の初期化：$\mathbf{S}_0$はスパースなランダム行列として生成される。対称性を確保するために、生成された行列を対称行列に変換する。
+    \item 正規化：生成された$\mathbf{S}_0$をフロベニウスノルムで正規化し、行列のノルムを1に調整する。
+\end{enumerate}
+これにより、初期隣接行列$\mathbf{S}_0$は適切なスパース性と対称性を持つ形で設定される。
+
+\subsection{データ生成方法}
+本節では、観測データ$\mathbf{X}$がノイズ項$\bm{\varepsilon}_t$からどのように生成されるかを詳細に説明する。
+
+時刻$t$における観測信号$\mathbf{x}_t$は、構造方程式モデル（Structural Equation Model: SEM）に基づき、以下の(\ref{eq:data_generation})式で表される。
+
+\begin{align}
+    \mathbf{x}_t = \mathbf{S}_t \mathbf{x}_t + \bm{\varepsilon}_t \label{eq:data_generation}
+\end{align}
+
+ただし、$\mathbf{S}_t$は隣接行列、$\bm{\varepsilon}_t$はノイズ項であり、$\bm{\varepsilon}_t \sim \mathcal{N}(\mathbf{0}, \sigma^2 \mathbf{I})$と仮定する。(\ref{eq:data_generation})式を整理すると、(\ref{eq:x_from_epsilon})式のようになる。% Changed
+
+\begin{align}
+    \mathbf{x}_t = (\mathbf{I} - \mathbf{S}_t)^{-1} \bm{\varepsilon}_t \label{eq:x_from_epsilon}
+\end{align}
+
+\subsection{アルゴリズムの初期化と実行}
+初期隣接行列$\mathbf{S}_0$を基に、以下の4つのオンラインTV-SEM(Time Varying Structural Equation Model: TV-SEM)アルゴリズムを初期化し、実行した。
+\begin{enumerate}
+    \item \textbf{Prediction Correction (PC) アルゴリズム} \cite{tvgti-pc} \\
+    パラメータ$\alpha, \beta_{\text{pc}}$を用いて、予測ステップ、修正ステップを実行するアルゴリズム。
+
+    \item \textbf{Correction Only (CO) アルゴリズム} \cite{tvgti-pc} \\
+    パラメータ$\beta_{\text{pc}}$を用いて、修正ステップのみを実行するアルゴリズム。
+    
+    \item \textbf{SGD アルゴリズム} \cite{tvgti-pc} \\
+    パラメータ$\beta_{\text{sgd}}$を用いて、Correction Only アルゴリズムと同様に、修正ステップのみを実行するが、直近の1データのみを用いて更新を行う。
+    
+    \item \textbf{提案手法} \\
+    パラメータ$r$, $q$, $\rho$を用いて、並列射影ステップを組み込んだ提案手法。
+\end{enumerate}
+
+各アルゴリズムは、シミュレーションデータ$\mathbf{X}$を入力として受け取り、時刻$t$における隣接行列の推定値$\mathbf{\hat{S}}_t$を逐次的に更新する。推定結果および各アルゴリズムのコスト関数の値を収集し、性能評価を行った。
+
+\subsection{各アルゴリズムのパラメータ}
+オンライン推定アルゴリズムにおける各種パラメータは以下の表\ref{tab:algorithm_params}に示す。これらのパラメータは、推定アルゴリズムの動作および収束特性に影響を与える重要な要素である。
+
+\begin{table}[H]
+    \centering
+    \caption{オンラインTV-SEMアルゴリズムのパラメータ}
+    \label{tab:algorithm_params}
+    \begin{tabular}{c|p{8cm}}
+        \hline
+        \textbf{パラメータ} & \textbf{説明} \\
+        \hline
+        $P$ & 予測ステップの回数 \\
+        $C$ & 修正ステップの回数 \\
+        $\gamma$ & 移動平均の減衰係数 \\
+        $\alpha$ & 予測ステップにおけるステップサイズ \\
+        $\beta$ & 修正ステップにおけるステップサイズ \\
+        $r$ & 並列射影ステップで1プロセッサーごとに使用するデータのウィンドウサイズ \\
+        $q$ & 並列計算を行うプロセッサーの数 \\
+        $\rho$ & 劣勾配射影における制約集合のサイズを調整するためのパラメータ \\
+        \hline
+    \end{tabular}
+\end{table}
+
+\newpage
+\subsection{評価指標}
+本実験では、推定行列$\mathbf{\hat{S}}_t$と真の隣接行列$\mathbf{S}^\star$との間の正規化二乗誤差（Normalized Squared Error: NSE）を評価指標として用いた。NSEは以下の(\ref{eq:nse})式で定義される。
+
+\begin{align}
+    \text{NSE}(\mathbf{\hat{S}}_t, \mathbf{S}^\star) = \frac{\| \mathbf{\hat{S}}_t - \mathbf{S}^\star \|_F^2}{\| \mathbf{S}_0 - \mathbf{S}^\star \|_F^2} \label{eq:nse}
+\end{align}
+
+ここで、$\| \cdot \|_F$はフロベニウスノルムを表し、$\mathbf{S}^\star$は真の隣接行列を示す。NSEは推定誤差を初期推定誤差で正規化することで、アルゴリズムの収束性能を比較可能とする。NSEの値が小さいほど、推定行列が真の隣接行列に近いことを意味する。
+
+\newpage
+\subsection{実験結果}
+
+\subsubsection{グラフ構造が時不変な場合}
+まず，グラフ構造が時間的に変化しない場合を想定し，そのときの推定性能を評価した．
+表\ref{tab:time_invariant_params}に，時不変のグラフ構造に対する性能評価時の各アルゴリズムの主なパラメータを示す．
+
+\begin{table}[H]
+  \centering
+  \caption{時不変のグラフ構造に対する性能評価時のパラメータ}
+  \label{tab:time_invariant_params}
+  \begin{tabular}{c|c|c|c|c}
+      \hline
+      \textbf{パラメータ} & \textbf{Correction Only} & \textbf{Prediction Correction} & \textbf{SGD} & \textbf{提案手法} \\
+      \hline
+      $P$ & 0 & 1 & 0& - \\
+      $C$ & 1 & 1 & 1 & - \\
+      $\gamma$ & 0.999 & 0.999 & 0 & - \\
+      $\alpha$ & - & 0.015 & - & - \\
+      $\beta$ & 0.02 & 0.015 & 0.02 & - \\
+      $r$ & - & - & - & 4 \\
+      $q$ & - & - & - & 10 \\
+      $\rho$ & - & - & - & 0.15 \\
+      \hline
+  \end{tabular}
+\end{table}
+
+続いて，図\ref{fig:time_invariant}に，時不変のグラフ構造に対する各アルゴリズムの推定結果および100回の試行による平均を示す．
+図\ref{K1_N10}では，一つの試行の結果として観測量の推定誤差の推移が示されており，図\ref{K1_N10_avg}では100回の試行について推定誤差を平均した結果を示している．
+提案手法が他手法と比較して良好な推定精度を得られていることが分かる．
+
+\begin{figure}[htbp]
+  \centering
+  \begin{subfigure}[b]{0.45\textwidth}
+    \centering
+    \includegraphics[width=\textwidth,pagebox=cropbox,clip]{./images/result_N10_T5000_maxweight0.5_variancee0.005_K1_SissymmetricTrue_seed10_P1_C1_gammma0.999_alpha0.015_betapc0.015_betaco0.02_betasgd0.02_r4_q10_rho0.15_timestamp20250109_141813.png}
+    \caption{時不変のグラフ構造に対する推定}
+    \label{K1_N10}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[b]{0.45\textwidth}
+    \centering
+    \includegraphics[width=\textwidth,pagebox=cropbox,clip]{./images/result_N10_num_trials100_T5000_maxweight0.5_variancee0.005_K1_SissymmetricTrue_seed42_P1_C1_gammma0.999_alpha0.015_betapc0.015_betaco0.02_betasgd0.02_r4_q20_rho0.15_timestamp20250109_141314_.png}
+    \caption{100回の試行による平均}
+    \label{K1_N10_avg}
+  \end{subfigure}
+  \caption{時不変のグラフ構造に対するアルゴリズムの性能評価}
+  \label{fig:time_invariant}
+\end{figure}
+
+\newpage
+\subsubsection{時間方向のグラフ構造変化に対するアルゴリズムの性能評価}
+次に，時間方向においてのみグラフ構造が変化し，それ以外の箇所では一定のグラフ構造が維持されるような設定を考える．
+このような設定に基づいて，各アルゴリズムの性能を評価した結果を示す．
+まず，ノード数10の場合について，表\ref{tab:K4_N10_params}に主なパラメータを示し，図\ref{fig:K4_N10}に推定結果を示す．
+図\ref{K4_N10}では，一つの試行における推定誤差の推移が，図\ref{K4_N10_avg}では100回の試行による推定誤差の平均が示されている．
+提案手法は他のアルゴリズムよりも高い収束性能を示しており，特に時間方向に変化が生じる局面での推定性能において差が顕著であることが分かる．
+
+\begin{table}[H]
+  \centering
+  \caption{時間方向のグラフ構造変化に対する性能評価時のパラメータ(ノード数10)}
+  \label{tab:K4_N10_params}
+  \begin{tabular}{c|c|c|c|c}
+      \hline
+      \textbf{パラメータ} & \textbf{Correction Only} & \textbf{Prediction Correction} & \textbf{SGD} & \textbf{提案手法} \\
+      \hline
+      $P$ & 0 & 1 & 0& - \\
+      $C$ & 1 & 1 & 1 & - \\
+      $\gamma$ & 0.999 & 0.999 & 0 & - \\
+      $\alpha$ & - & 0.015 & - & - \\
+      $\beta$ & 0.02 & 0.015 & 0.02 & - \\
+      $r$ & - & - & - & 4 \\
+      $q$ & - & - & - & 10 \\
+      $\rho$ & - & - & - & 0.15 \\
+      \hline
+  \end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+  \centering
+  \begin{subfigure}[b]{0.45\textwidth}
+    \centering
+    \includegraphics[width=\textwidth,pagebox=cropbox,clip]{./images/result_N10_T20000_maxweight0.5_variancee0.005_K4_SissymmetricTrue_seed10_P1_C1_gammma0.999_alpha0.015_betapc0.015_betaco0.02_betasgd0.02_r4_q10_rho0.15_timestamp20250109_141642.png}
+    \caption{時間方向のグラフ構造変化に対する推定}
+    \label{K4_N10}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[b]{0.45\textwidth}
+    \centering
+    \includegraphics[width=\textwidth,pagebox=cropbox,clip]{./images/result_N10_num_trials100_T20000_maxweight0.5_variancee0.005_K4_SissymmetricTrue_seed42_P1_C1_gammma0.999_alpha0.015_betapc0.015_betaco0.02_betasgd0.02_r4_q20_rho0.15_timestamp20250112_135723_.png}
+    \caption{100回の試行による平均}
+    \label{K4_N10_avg}
+  \end{subfigure}
+  \caption{時間方向のグラフ構造変化に対するアルゴリズムの性能評価(ノード数10)}
+  \label{fig:K4_N10}
+\end{figure}
+
+\newpage
+次に，ノード数30の場合についての結果を示す．
+表\ref{tab:K4_N30_params}に主なパラメータを示し，図\ref{fig:K4_N30}に推定結果を示す．
+ノード数が増加した場合でも，提案手法が他の手法に比べて安定した推定精度を維持する様子が確認できる．
+
+\begin{table}[H]
+  \centering
+  \caption{時間方向のグラフ構造変化に対する性能評価時のパラメータ(ノード数30)}
+  \label{tab:K4_N30_params}
+  \begin{tabular}{c|c|c|c|c}
+      \hline
+      \textbf{パラメータ} & \textbf{Correction Only} & \textbf{Prediction Correction} & \textbf{SGD} & \textbf{提案手法} \\
+      \hline
+      $P$ & 0 & 1 & 0 & - \\
+      $C$ & 1 & 1 & 1 & - \\
+      $\gamma$ & 0.999 & 0.999 & 0 & - \\
+      $\alpha$ & - & 0.01 & - & - \\
+      $\beta$ & 0.01 & 0.01 & 0.01 & - \\
+      $r$ & - & - & - & 30 \\
+      $q$ & - & - & - & 10 \\
+      $\rho$ & - & - & - & 2.4 \\
+      \hline
+  \end{tabular}
+\end{table}
+
+\begin{figure}[htbp]
+  \centering
+  \begin{subfigure}[b]{0.45\textwidth}
+    \centering
+    \includegraphics[width=\textwidth,pagebox=cropbox,clip]{./images/result_N30_T8000_maxweight0.5_variancee0.005_K4_SissymmetricTrue_seed30_P1_C1_gammma0.999_alpha0.01_betapc0.01_betaco0.01_betasgd0.01_r30_q10_rho2.4_timestamp20250109_140617.png}
+    \caption{時間方向のグラフ構造変化に対する推定}
+    \label{K4_N30}
+  \end{subfigure}
+  \hfill
+  \begin{subfigure}[b]{0.45\textwidth}
+    \centering
+    \includegraphics[width=\textwidth,pagebox=cropbox,clip]{./images/result_N30_num_trials100_T8000_maxweight0.5_variancee0.005_K4_SissymmetricTrue_seed42_P1_C1_gammma0.999_alpha0.01_betapc0.01_betaco0.01_betasgd0.01_r30_q10_rho2.4_timestamp20250112_170157_.png}
+    \caption{100回の試行による平均}
+    \label{K4_N30_avg}
+  \end{subfigure}
+  \caption{時間方向のグラフ構造変化に対するアルゴリズムの性能評価(ノード数30)}
+  \label{fig:K4_N30}
+\end{figure}
+
+%
+\newpage
+\section{結論}
+%
+本研究では、オンラインで変化するグラフ構造を推定する問題に対し、従来の予測-修正フレームワークを拡張し、適応並列射影劣勾配法(Adaptive Parallel Subgradient Projection: APSP)を組み込んだ新たな手法を提案した。本手法により、非定常な環境下でも安定した推定性能が得られることを数値実験で示した。
+
+特に、グラフ構造が急峻に変化する場合や、長期的に平滑な変化を示す場合など、様々な非定常性を持つシナリオにおいて、提案手法は迅速な適応と高精度な推定を両立した。また、提案法はベクタライズや制約条件への容易な対応により、計算コストおよび実装上の利点を有している。
+
+しかし、本研究で用いたコスト関数や正則化条件は限定的であり、さらなる改良の余地がある。たとえば、他の正則化手法やより複雑な時変モデル、確率的勾配降下や変分ベイズ的アプローチなども考えられる。さらに、大規模ネットワークへの適用性や疎行列演算を活用した計算量削減も今後の課題である。
+
+総じて、本研究の成果は、時変に変化するグラフ構造の推定問題に対して有用な一歩となり、より高度な動的ネットワーク解析手法の開発へ向けた基盤を築いたと言える。
+
+
+\addcontentsline{toc}{section}{参考文献}
+\begin{thebibliography}{99}
+  \bibitem{tvgti-pc} A. Natali, E. Isufi, M. Coutino and G. Leus, ”Learning time-varying graphs from online data”, IEEE Open Journal of Signal Processing, vol. 3, pp. 212–228, 2022.
+  \bibitem{Yukawa2007} M. Yukawa, K. Slavakis, and I. Yamada, "Adaptive Parallel Quadratic-Metric Projection Algorithms," \textit{IEEE Transactions on Audio, Speech, and Language Processing}, vol. 15, no. 5, pp. 1665–1680, Jul. 2007.
+  \bibitem{Yamada2002} I. Yamada, K. Slavakis, and K. Yamada, "An Efficient Robust Adaptive Filtering Algorithm Based on Parallel Subgradient Projection Techniques," \textit{IEEE Transactions on Signal Processing}, vol. 50, no. 5, pp. 1091–1095, May 2002.
+  \bibitem{APSM_Reference}
+    Y.~Yamada, Adaptive Projected Subgradient Methods for Asymptotic Minimization of Sequence of Convex Functions,
+    IEICE Transactions on Fundamentals, vol.~E86-A, no.~8, pp.~1864--1869, 2003.
+\end{thebibliography}
+%----------------------------------------------------------------------------------------
+\end{document}
