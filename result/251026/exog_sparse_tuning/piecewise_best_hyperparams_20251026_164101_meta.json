@@ -1,0 +1,162 @@
+{
+  "created_at": "2025-10-26T16:41:01.196915",
+  "command": [
+    "/Users/fmjp/Desktop/lab/simu/tvgti_sem_exog_sparse/code/tune_and_run.py",
+    "piecewise",
+    "--num_trials",
+    "100",
+    "--methods",
+    "pp",
+    "--run_pp"
+  ],
+  "scenario": "piecewise",
+  "tuning_kwargs": {
+    "methods": "pp"
+  },
+  "search_overrides": {},
+  "result_root": "result",
+  "subdir": "exog_sparse_tuning",
+  "tuning_summary": {
+    "seed": 3,
+    "tuning_trials": 300,
+    "tuning_runs_per_trial": 1,
+    "truncation_horizon": 400,
+    "generator_kwargs": {
+      "N": 20,
+      "T": 1000,
+      "sparsity": 0.7,
+      "max_weight": 0.5,
+      "std_e": 0.05,
+      "K": 4,
+      "s_type": "regular",
+      "t_min": 0.5,
+      "t_max": 1.0,
+      "z_dist": "uniform01"
+    },
+    "initial_fallback": {
+      "pp": {
+        "r": 50,
+        "q": 5,
+        "rho": 0.001,
+        "mu_lambda": 0.05
+      },
+      "pc": {
+        "lambda_reg": 0.001,
+        "alpha": 0.01,
+        "beta": 0.01,
+        "gamma": 0.9,
+        "P": 1,
+        "C": 1
+      },
+      "co": {
+        "beta_co": 0.02
+      },
+      "sgd": {
+        "beta_sgd": 0.0269
+      }
+    },
+    "search_spaces": {
+      "pp": {
+        "rho": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 0.1,
+          "log": true
+        },
+        "mu_lambda": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 1.0,
+          "log": true
+        }
+      },
+      "pc": {
+        "lambda_reg": {
+          "type": "float",
+          "low": 1e-05,
+          "high": 0.01,
+          "log": true
+        },
+        "alpha": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 0.2,
+          "log": true
+        },
+        "beta_pc": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 0.3,
+          "log": true
+        },
+        "gamma": {
+          "type": "float",
+          "low": 0.85,
+          "high": 0.999,
+          "log": false
+        },
+        "P": {
+          "type": "int",
+          "low": 0,
+          "high": 2,
+          "step": 1
+        },
+        "C": {
+          "type": "categorical",
+          "choices": [
+            1,
+            2,
+            5
+          ]
+        }
+      },
+      "co": {
+        "beta_co": {
+          "type": "float",
+          "low": 1e-05,
+          "high": 1.0,
+          "log": true
+        },
+        "gamma": {
+          "type": "float",
+          "low": 0.85,
+          "high": 0.999,
+          "log": false
+        },
+        "C": {
+          "type": "categorical",
+          "choices": [
+            1,
+            2,
+            5
+          ]
+        }
+      },
+      "sgd": {
+        "beta_sgd": {
+          "type": "float",
+          "low": 1e-05,
+          "high": 1.0,
+          "log": true
+        }
+      }
+    },
+    "search_overrides": {},
+    "method_results": {
+      "pp": {
+        "best_params": {
+          "rho": 0.005776652510974186,
+          "mu_lambda": 0.6854420262243148
+        },
+        "best_value": 0.5396480302170313
+      }
+    },
+    "generator_name": "code.data_gen.generate_piecewise_X_with_exog"
+  },
+  "snapshots": {
+    "hyperparam_tuning": "result/251026/exog_sparse_tuning/scripts/hyperparam_tuning.py",
+    "tune_and_run": "result/251026/exog_sparse_tuning/scripts/tune_and_run.py",
+    "data_gen": "result/251026/exog_sparse_tuning/scripts/data_gen.py"
+  },
+  "hyperparam_file": "result/251026/exog_sparse_tuning/piecewise_best_hyperparams_20251026_164101.json"
+}

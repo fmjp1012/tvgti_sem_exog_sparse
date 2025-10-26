@@ -1,5 +1,5 @@
 import os
-import shutil
+import sys
 import datetime
 import argparse
 import json
@@ -10,11 +10,11 @@ import matplotlib.pyplot as plt
 from pathlib import Path
 
 
-from code.data_gen import generate_piecewise_Y_with_exog
+from code.data_gen import generate_piecewise_X_with_exog
 from models.pp_exog import PPExogenousSEM
-from models.tvgti_pc.time_varying_sem import TimeVaryingSEM as PCSEM
+from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
 from utils.io.plotting import apply_style
-from utils.io.results import create_result_dir, backup_script
+from utils.io.results import create_result_dir, backup_script, make_result_filename, save_json
 from models.tvgti_pc.time_varying_sem import TimeVaryingSEMWithL1Correction as PCSEM_L1C
 
 
@@ -30,7 +30,7 @@ def main():
     std_e = 0.05
     K = 4
     seed = 3
-    np.random.seed(seed)
+    rng = np.random.default_rng(seed)
 
     # 外部設定の読み込み（JSON/CLI）
     parser = argparse.ArgumentParser()
@@ -90,37 +90,46 @@ def main():
         mu_lambda = args.pp_mu_lambda
 
     # 生成
-    S_series, B_true, U, Y = generate_piecewise_Y_with_exog(
-        N=N, T=T, sparsity=sparsity, max_weight=max_weight, std_e=std_e, K=K,
-        s_type="random", b_min=0.5, b_max=1.0, u_dist="uniform01"
+    S_series, T_mat, Z, Y = generate_piecewise_X_with_exog(
+        N=N,
+        T=T,
+        sparsity=sparsity,
+        max_weight=max_weight,
+        std_e=std_e,
+        K=K,
+        s_type="random",
+        t_min=0.5,
+        t_max=1.0,
+        z_dist="uniform01",
+        rng=rng,
     )
 
     # PP
     S0 = np.zeros((N, N))
     b0 = np.ones(N)
     pp = PPExogenousSEM(N, S0, b0, r=r, q=q, rho=rho, mu_lambda=mu_lambda)
-    S_hat_list, _ = pp.run(Y, U)
+    S_hat_list, _ = pp.run(Y, Z)
 
     # PC/CO/SGD baseline
     X = Y
     S0_pc = np.zeros((N, N))
-    pc = PCSEM(N, S0_pc, lambda_reg, alpha, beta, gamma, P, C, show_progress=False, name="pc_baseline")
-    estimates_pc, _ = pc.run(X)
-    co = PCSEM(N, S0_pc, lambda_reg, alpha, beta_co, gamma, 0, C, show_progress=False, name="co_baseline")
-    estimates_co, _ = co.run(X)
-    sgd = PCSEM(N, S0_pc, lambda_reg, alpha, beta_sgd, 0.0, 0, C, show_progress=False, name="sgd_baseline")
-    estimates_sgd, _ = sgd.run(X)
+    pc = PCSEM(N, S0_pc, lambda_reg, alpha, beta, gamma, P, C, show_progress=False, name="pc_baseline", T_init=T_mat)
+    estimates_pc, _ = pc.run(X, Z)
+    co = PCSEM(N, S0_pc, lambda_reg, alpha, beta_co, gamma, 0, C, show_progress=False, name="co_baseline", T_init=T_mat)
+    estimates_co, _ = co.run(X, Z)
+    sgd = PCSEM(N, S0_pc, lambda_reg, alpha, beta_sgd, 0.0, 0, C, show_progress=False, name="sgd_baseline", T_init=T_mat)
+    estimates_sgd, _ = sgd.run(X, Z)
 
     # 新手法: PC + L1 correction
-    pc_l1c = PCSEM_L1C(N, S0_pc, lambda_reg, alpha, beta, gamma, P, C, show_progress=False, name="pc_l1corr")
-    estimates_pc_l1c, _ = pc_l1c.run(X)
+    pc_l1c = PCSEM_L1C(N, S0_pc, lambda_reg, alpha, beta, gamma, P, C, show_progress=False, name="pc_l1corr", T_init=T_mat)
+    estimates_pc_l1c, _ = pc_l1c.run(X, Z)
 
     # 誤差プロット（Frobenius error）
-    err_pp = [np.linalg.norm(S_hat_list[t] - S_series[t], ord='fro') for t in range(T)]
-    err_pc = [np.linalg.norm(estimates_pc[t] - S_series[t], ord='fro') for t in range(T)]
-    err_co = [np.linalg.norm(estimates_co[t] - S_series[t], ord='fro') for t in range(T)]
-    err_sgd = [np.linalg.norm(estimates_sgd[t] - S_series[t], ord='fro') for t in range(T)]
-    err_pc_l1c = [np.linalg.norm(estimates_pc_l1c[t] - S_series[t], ord='fro') for t in range(T)]
+    err_pp = [float(np.linalg.norm(S_hat_list[t] - S_series[t], ord='fro')) for t in range(T)]
+    err_pc = [float(np.linalg.norm(estimates_pc[t] - S_series[t], ord='fro')) for t in range(T)]
+    err_co = [float(np.linalg.norm(estimates_co[t] - S_series[t], ord='fro')) for t in range(T)]
+    err_sgd = [float(np.linalg.norm(estimates_sgd[t] - S_series[t], ord='fro')) for t in range(T)]
+    err_pc_l1c = [float(np.linalg.norm(estimates_pc_l1c[t] - S_series[t], ord='fro')) for t in range(T)]
 
     # オフライン最適（SEM+L1）の平均誤差を計算（オプションの横線用）
     def compute_offline_mean_error_l1(X_mat: np.ndarray, S_series_true, lambda_l1: float) -> float:
@@ -148,6 +157,7 @@ def main():
     plt.xlabel('t')
     plt.ylabel('Frobenius error')
     plt.grid(True, which='both')
+    offline_err = None
     if args.show_offline_line:
         offline_err = compute_offline_mean_error_l1(X, S_series, lambda_reg)
         plt.axhline(y=offline_err, color='black', linestyle='--', alpha=0.8, label='Offline SEM+L1 (mean)')
@@ -155,15 +165,40 @@ def main():
 
     # 保存
     timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    notebook_filename = os.path.basename(__file__)
-    filename = (f'timestamp{timestamp}_result_N{N}_notebook_filename{notebook_filename}_'
-                f'T{T}_K{K}_seed{seed}_r{r}_q{q}_rho{rho}_mulambda{mu_lambda}.png')
+    filename = make_result_filename(
+        prefix="piecewise_once",
+        params={
+            "N": N,
+            "T": T,
+            "K": K,
+            "sparsity": sparsity,
+            "maxweight": max_weight,
+            "stde": std_e,
+            "seed": seed,
+            "r": r,
+            "q": q,
+            "rho": rho,
+            "mulambda": mu_lambda,
+        },
+        suffix=".png",
+    )
     print(filename)
     result_dir = create_result_dir(Path('./result'), 'exog_sparse_piecewise_once', extra_tag='images')
-    plt.savefig(str(Path(result_dir) / filename))
+    figure_path = Path(result_dir) / filename
+    plt.savefig(str(figure_path))
     plt.show()
 
-    backup_script(Path(__file__), Path(result_dir))
+    scripts_dir = Path(result_dir) / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    script_copies = {"run_piecewise_once": str(backup_script(Path(__file__), scripts_dir))}
+    data_gen_path = Path(__file__).resolve().parent / "data_gen.py"
+    if data_gen_path.exists():
+        script_copies["data_gen"] = str(backup_script(data_gen_path, scripts_dir))
+    if args.config is not None and os.path.isfile(args.config):
+        config_path = Path(args.config)
+        script_copies["config_json"] = str(backup_script(config_path, scripts_dir))
+    else:
+        config_path = None
 
     # ヒートマップ比較の保存（オプション）
     if args.save_heatmaps:
@@ -190,12 +225,64 @@ def main():
         cbar.set_label("")
         heatmap_filename = (f'timestamp{timestamp}_heatmaps_N{N}_notebook_filename{notebook_filename}_'
                             f'T{T}_K{K}_seed{seed}_r{r}_q{q}_rho{rho}_mulambda{mu_lambda}_t{t_idx}.png')
-        fig.savefig(os.path.join(save_path, heatmap_filename))
+        fig.savefig(str(Path(result_dir) / heatmap_filename))
         # 画面にも表示
         plt.show()
+
+    metadata = {
+        "created_at": datetime.datetime.now().isoformat(),
+        "command": sys.argv,
+        "config": {
+            "N": N,
+            "T": T,
+            "K": K,
+            "sparsity": sparsity,
+            "max_weight": max_weight,
+            "std_e": std_e,
+            "seed": seed,
+            "config_json": str(config_path) if config_path is not None else None,
+            "cli_overrides": {
+                "pp_r": args.pp_r,
+                "pp_q": args.pp_q,
+                "pp_rho": args.pp_rho,
+                "pp_mu_lambda": args.pp_mu_lambda,
+                "N_override": args.N,
+                "show_offline_line": bool(args.show_offline_line),
+                "save_heatmaps": bool(args.save_heatmaps),
+                "heatmap_time": args.heatmap_time,
+            },
+        },
+        "methods": {
+            "pp": {"hyperparams": {"r": r, "q": q, "rho": rho, "mu_lambda": mu_lambda}},
+            "pc": {"hyperparams": {"lambda_reg": lambda_reg, "alpha": alpha, "beta": beta, "gamma": gamma, "P": P, "C": C}},
+            "co": {"hyperparams": {"lambda_reg": lambda_reg, "alpha": alpha, "beta_co": beta_co, "gamma": gamma, "C": C}},
+            "sgd": {"hyperparams": {"lambda_reg": lambda_reg, "alpha": alpha, "beta_sgd": beta_sgd, "C": C}},
+            "pc_l1c": {"hyperparams": {"lambda_reg": lambda_reg, "alpha": alpha, "beta": beta, "gamma": gamma, "P": P, "C": C}},
+        },
+        "generator": {
+            "function": "code.data_gen.generate_piecewise_X_with_exog",
+            "kwargs": {
+                "t_min": 0.5,
+                "t_max": 1.0,
+                "z_dist": "uniform01",
+            },
+        },
+        "results": {
+            "figure": filename,
+            "figure_path": str(figure_path),
+            "metrics": {
+                "pp_fro": err_pp,
+                "pc_fro": err_pc,
+                "co_fro": err_co,
+                "sgd_fro": err_sgd,
+                "pc_l1c_fro": err_pc_l1c,
+                "offline_mean": float(offline_err) if args.show_offline_line else None,
+            },
+        },
+        "snapshots": script_copies,
+    }
+    save_json(metadata, Path(result_dir), name=f"{figure_path.stem}_meta.json")
 
 
 if __name__ == "__main__":
     main()
-
-

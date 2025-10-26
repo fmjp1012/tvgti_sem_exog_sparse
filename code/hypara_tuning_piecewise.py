@@ -29,7 +29,7 @@ def main() -> None:
 
     args = parser.parse_args()
 
-    best = tune_piecewise_all_methods(
+    best, summary = tune_piecewise_all_methods(
         N=args.N,
         T=args.T,
         sparsity=args.sparsity,
@@ -53,16 +53,37 @@ def main() -> None:
             json.dump(best, f, indent=2)
         print(f"ハイパラを {args.output_json} に保存しました")
     else:
+        metadata = {
+            "scenario": "piecewise",
+            "arguments": {
+                "N": args.N,
+                "T": args.T,
+                "sparsity": args.sparsity,
+                "max_weight": args.max_weight,
+                "std_e": args.std_e,
+                "K": args.K,
+                "tuning_trials": args.tuning_trials,
+                "tuning_runs_per_trial": args.tuning_runs_per_trial,
+                "seed": args.seed,
+            },
+            "tuning_summary": summary,
+        }
+        script_paths = {
+            "hyperparam_tuning": Path(__file__).resolve().parent / "hyperparam_tuning.py",
+            "hypara_tuning_piecewise": Path(__file__),
+            "data_gen": Path(__file__).resolve().parent / "data_gen.py",
+        }
         out_path = save_best_hyperparams(
             best,
             scenario="piecewise",
             result_root=args.result_root,
             subdir=args.subdir,
+            metadata=metadata,
+            script_paths=script_paths,
         )
         print(f"ハイパラを {out_path} に保存しました")
 
 
 if __name__ == '__main__':
     main()
-
 

@@ -1,8 +1,8 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
-from models.tvgti_pc.time_varying_sem import TimeVaryingSEM as PCSEM
-from code.data_gen import generate_piecewise_Y_with_exog
+from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
+from code.data_gen import generate_piecewise_X_with_exog
 
 
 def main():
@@ -14,9 +14,19 @@ def main():
     std_e = 0.05
     K = 3
 
-    S_series, B_true, U, Y = generate_piecewise_Y_with_exog(
-        N=N, T=T, sparsity=sparsity, max_weight=max_weight, std_e=std_e, K=K,
-        s_type="random"
+    rng = np.random.default_rng(3)
+    S_series, T_mat, Z, Y = generate_piecewise_X_with_exog(
+        N=N,
+        T=T,
+        sparsity=sparsity,
+        max_weight=max_weight,
+        std_e=std_e,
+        K=K,
+        s_type="random",
+        t_min=0.5,
+        t_max=1.0,
+        z_dist="uniform01",
+        rng=rng,
     )
 
     # 既存PCは X を入力とする想定のため Y をそのまま X として渡す
@@ -42,7 +52,7 @@ def main():
     plt.figure(figsize=(10, 6))
     plt.plot(nse_series, color='limegreen', label='PC baseline (NSE)')
     plt.yscale('log')
-    plt.xlim(left=0, right=len(frob_series))
+    plt.xlim(left=0, right=len(nse_series))
     plt.xlabel('t')
     plt.ylabel('NSE')
     plt.grid(True, which='both')
@@ -52,5 +62,3 @@ def main():
 
 if __name__ == "__main__":
     main()
-
-

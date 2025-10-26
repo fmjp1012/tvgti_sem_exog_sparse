@@ -1,12 +1,13 @@
 from __future__ import annotations
 
 import argparse
-import json
 import os
+import sys
+import json
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Dict, Optional
+from typing import Any, Dict, Optional
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -14,11 +15,12 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 from tqdm_joblib import tqdm_joblib
 
-from code.data_gen import generate_linear_Y_with_exog
+from code.data_gen import generate_linear_X_with_exog
 from models.pp_exog import PPExogenousSEM
-from models.tvgti_pc.time_varying_sem import TimeVaryingSEM as PCSEM
+from models.pg_batch import ProximalGradientBatchSEM, ProximalGradientConfig
+from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
 from utils.io.plotting import apply_style
-from utils.io.results import backup_script, create_result_dir, make_result_filename
+from utils.io.results import backup_script, create_result_dir, make_result_filename, save_json
 
 
 @dataclass
@@ -26,6 +28,7 @@ class ExperimentConfig:
     run_pc: bool = True
     run_co: bool = True
     run_sgd: bool = True
+    run_pg: bool = True
     run_pp: bool = True
     num_trials: int = 100
     N: int = 20
@@ -34,7 +37,80 @@ class ExperimentConfig:
     max_weight: float = 0.5
     std_e: float = 0.05
     seed: int = 3
-    hyperparams: Dict[str, Dict[str, float]] | None = None
+    hyperparams: Dict[str, Dict[str, Any]] | None = None
+    hyperparam_path: Optional[Path] = None
+
+
+DATA_GEN_DEFAULTS = {
+    "s_type": "random",
+    "t_min": 0.5,
+    "t_max": 1.0,
+    "z_dist": "uniform01",
+}
+
+
+def _fmt(value: object) -> str:
+    if value is None:
+        return "<none>"
+    if isinstance(value, bool):
+        return "ON" if value else "OFF"
+    if isinstance(value, float):
+        return f"{value:.6g}"
+    return str(value)
+
+
+def _coerce_bool(value: object, default: bool = False) -> bool:
+    if value is None:
+        return default
+    if isinstance(value, bool):
+        return value
+    if isinstance(value, (int, np.integer)):
+        return bool(int(value))
+    if isinstance(value, str):
+        return value.strip().lower() in {"1", "true", "yes", "on"}
+    return bool(value)
+
+
+def _print_block(title: str, items: Dict[str, object]) -> None:
+    if not items:
+        return
+    print(f"--- {title} ---")
+    for key, value in items.items():
+        print(f"{key:>24}: {_fmt(value)}")
+
+
+def print_linear_summary(
+    config: ExperimentConfig,
+    run_flags: Dict[str, bool],
+    hyperparams: Dict[str, Dict[str, Any]],
+) -> None:
+    print("=== Experiment Configuration ===")
+    common_items: Dict[str, object] = {
+        "Scenario": "linear",
+        "Hyperparam JSON": config.hyperparam_path,
+        "Num Trials": config.num_trials,
+        "Seed (base)": config.seed,
+        "N": config.N,
+        "T": config.T,
+        "sparsity": config.sparsity,
+        "max_weight": config.max_weight,
+        "std_e": config.std_e,
+    }
+    _print_block("Common Parameters", common_items)
+    flag_items = {name.upper(): state for name, state in ((k, "ON" if v else "OFF") for k, v in run_flags.items())}
+    _print_block("Run Flags", flag_items)
+    for method_key, params in hyperparams.items():
+        label = f"{method_key.upper()} Hyperparams"
+        _print_block(label, params)
+    _print_block("Data Generation", DATA_GEN_DEFAULTS)
+    output_meta = {
+        "maxweight": common_items["max_weight"],
+        "stde": common_items["std_e"],
+        "mulambda": hyperparams.get("pp", {}).get("mu_lambda"),
+    }
+    _print_block("Output Meta Keys", output_meta)
+    _print_block("Output Root", {"result_dir": "./result/exog_sparse_linear"})
+    print("------------------------------")
 
 
 def load_hyperparams(json_path: Optional[Path]) -> Optional[Dict[str, Dict[str, float]]]:
@@ -62,6 +138,8 @@ def parse_args() -> ExperimentConfig:
     parser.add_argument("--no_co", action="store_true", help="CO法をスキップ")
     parser.add_argument("--run_sgd", action="store_true", help="SGD法を実行")
     parser.add_argument("--no_sgd", action="store_true", help="SGD法をスキップ")
+    parser.add_argument("--run_pg", action="store_true", help="PG法を実行")
+    parser.add_argument("--no_pg", action="store_true", help="PG法をスキップ")
     parser.add_argument("--run_pp", action="store_true", help="PP法を実行")
     parser.add_argument("--no_pp", action="store_true", help="PP法をスキップ")
 
@@ -78,6 +156,7 @@ def parse_args() -> ExperimentConfig:
         max_weight=args.max_weight,
         std_e=args.std_e,
         hyperparams=hyperparams,
+        hyperparam_path=args.hyperparam_json,
     )
 
     if args.no_pc:
@@ -95,6 +174,11 @@ def parse_args() -> ExperimentConfig:
     elif args.run_sgd:
         config.run_sgd = True
 
+    if args.no_pg:
+        config.run_pg = False
+    elif args.run_pg:
+        config.run_pg = True
+
     if args.no_pp:
         config.run_pp = False
     elif args.run_pp:
@@ -111,6 +195,7 @@ def main():
     run_pc_flag = config.run_pc
     run_co_flag = config.run_co
     run_sgd_flag = config.run_sgd
+    run_pg_flag = config.run_pg
     run_pp_flag = config.run_pp
     num_trials = config.num_trials
 
@@ -127,6 +212,7 @@ def main():
     pc_cfg = hyperparams.get("pc", {})
     co_cfg = hyperparams.get("co", {})
     sgd_cfg = hyperparams.get("sgd", {})
+    pg_cfg = hyperparams.get("pg", {})
 
     r = int(pp_cfg.get("r", 50))
     q = int(pp_cfg.get("q", 5))
@@ -142,21 +228,55 @@ def main():
 
     beta_co = float(co_cfg.get("beta_co", 0.02))
     beta_sgd = float(sgd_cfg.get("beta_sgd", 0.0269))
+    lambda_pg = float(pg_cfg.get("lambda_reg", 1e-3))
+    step_scale_pg = float(pg_cfg.get("step_scale", 1.0))
+    step_size_pg_raw = pg_cfg.get("step_size", None)
+    step_size_pg = float(step_size_pg_raw) if step_size_pg_raw is not None else None
+    max_iter_pg = int(pg_cfg.get("max_iter", 500))
+    tol_pg = float(pg_cfg.get("tol", 1e-4))
+    use_fista_pg = _coerce_bool(pg_cfg.get("use_fista", True), default=True)
+    use_backtracking_pg = _coerce_bool(pg_cfg.get("use_backtracking", False), default=False)
+
+    print_linear_summary(
+        config=config,
+        run_flags={
+            "pp": run_pp_flag,
+            "pc": run_pc_flag,
+            "co": run_co_flag,
+            "sgd": run_sgd_flag,
+            "pg": run_pg_flag,
+        },
+        hyperparams={
+            "pp": {"r": r, "q": q, "rho": rho, "mu_lambda": mu_lambda},
+            "pc": {"lambda_reg": lambda_reg, "alpha": alpha, "beta": beta, "gamma": gamma, "P": P, "C": C},
+            "co": {"lambda_reg": lambda_reg, "alpha": alpha, "beta_co": beta_co, "gamma": gamma, "C": C},
+            "sgd": {"lambda_reg": lambda_reg, "alpha": alpha, "beta_sgd": beta_sgd, "C": C},
+            "pg": {
+                "lambda_reg": lambda_pg,
+                "step_scale": step_scale_pg,
+                "step_size": step_size_pg,
+                "use_fista": use_fista_pg,
+                "use_backtracking": use_backtracking_pg,
+                "max_iter": max_iter_pg,
+                "tol": tol_pg,
+            },
+        },
+    )
 
     S0_pc = np.zeros((N, N))
 
     def run_trial(trial_seed: int):
-        np.random.seed(trial_seed)
-        S_series, _, U, Y = generate_linear_Y_with_exog(
+        rng = np.random.default_rng(trial_seed)
+        S_series, T_mat, Z, Y = generate_linear_X_with_exog(
             N=N, T=T, sparsity=sparsity, max_weight=max_weight, std_e=std_e,
-            s_type="random", b_min=0.5, b_max=1.0, u_dist="uniform01"
+            s_type="random", t_min=0.5, t_max=1.0, z_dist="uniform01", rng=rng
         )
         errors = {}
         if run_pp_flag:
             S0 = np.zeros((N, N))
             b0 = np.ones(N)
             model = PPExogenousSEM(N, S0, b0, r=r, q=q, rho=rho, mu_lambda=mu_lambda)
-            S_hat_list, _ = model.run(Y, U)
+            S_hat_list, _ = model.run(Y, Z)
             error_pp = [
                 (np.linalg.norm(S_hat_list[t] - S_series[t]) ** 2) / (np.linalg.norm(S_series[t]) ** 2 + 1e-12)
                 for t in range(T)
@@ -164,8 +284,20 @@ def main():
             errors['pp'] = error_pp
         if run_pc_flag:
             X = Y
-            pc = PCSEM(N, S0_pc, lambda_reg, alpha, beta, gamma, P, C, show_progress=False, name="pc_baseline")
-            estimates_pc, _ = pc.run(X)
+            pc = PCSEM(
+                N,
+                S0_pc,
+                lambda_reg,
+                alpha,
+                beta,
+                gamma,
+                P,
+                C,
+                show_progress=False,
+                name="pc_baseline",
+                T_init=T_mat,
+            )
+            estimates_pc, _ = pc.run(X, Z)
             error_pc = [
                 (np.linalg.norm(estimates_pc[t] - S_series[t]) ** 2) / (np.linalg.norm(S_series[t]) ** 2 + 1e-12)
                 for t in range(T)
@@ -173,8 +305,20 @@ def main():
             errors['pc'] = error_pc
         if run_co_flag:
             X = Y
-            co = PCSEM(N, S0_pc, lambda_reg, alpha, beta_co, gamma, 0, C, show_progress=False, name="co_baseline")
-            estimates_co, _ = co.run(X)
+            co = PCSEM(
+                N,
+                S0_pc,
+                lambda_reg,
+                alpha,
+                beta_co,
+                gamma,
+                0,
+                C,
+                show_progress=False,
+                name="co_baseline",
+                T_init=T_mat,
+            )
+            estimates_co, _ = co.run(X, Z)
             error_co = [
                 (np.linalg.norm(estimates_co[t] - S_series[t]) ** 2) / (np.linalg.norm(S_series[t]) ** 2 + 1e-12)
                 for t in range(T)
@@ -182,13 +326,45 @@ def main():
             errors['co'] = error_co
         if run_sgd_flag:
             X = Y
-            sgd = PCSEM(N, S0_pc, lambda_reg, alpha, beta_sgd, 0.0, 0, C, show_progress=False, name="sgd_baseline")
-            estimates_sgd, _ = sgd.run(X)
+            sgd = PCSEM(
+                N,
+                S0_pc,
+                lambda_reg,
+                alpha,
+                beta_sgd,
+                0.0,
+                0,
+                C,
+                show_progress=False,
+                name="sgd_baseline",
+                T_init=T_mat,
+            )
+            estimates_sgd, _ = sgd.run(X, Z)
             error_sgd = [
                 (np.linalg.norm(estimates_sgd[t] - S_series[t]) ** 2) / (np.linalg.norm(S_series[t]) ** 2 + 1e-12)
                 for t in range(T)
             ]
             errors['sgd'] = error_sgd
+        if run_pg_flag:
+            X = Y
+            pg_config = ProximalGradientConfig(
+                lambda_reg=lambda_pg,
+                step_size=step_size_pg,
+                step_scale=step_scale_pg,
+                max_iter=max_iter_pg,
+                tol=tol_pg,
+                use_fista=use_fista_pg,
+                use_backtracking=use_backtracking_pg,
+                show_progress=False,
+                name="pg_baseline",
+            )
+            pg_model = ProximalGradientBatchSEM(N, pg_config)
+            estimates_pg, _ = pg_model.run(X, Z)
+            error_pg = [
+                (np.linalg.norm(estimates_pg[t] - S_series[t]) ** 2) / (np.linalg.norm(S_series[t]) ** 2 + 1e-12)
+                for t in range(T)
+            ]
+            errors['pg'] = error_pg
         return errors
 
     trial_seeds = [seed + i for i in range(num_trials)]
@@ -196,9 +372,10 @@ def main():
     error_pc_total = np.zeros(T) if run_pc_flag else None
     error_co_total = np.zeros(T) if run_co_flag else None
     error_sgd_total = np.zeros(T) if run_sgd_flag else None
+    error_pg_total = np.zeros(T) if run_pg_flag else None
 
     with tqdm_joblib(tqdm(desc="Progress", total=num_trials)):
-        results = Parallel(n_jobs=-1, batch_size=1)(delayed(run_trial)(ts) for ts in trial_seeds)
+        results = Parallel(n_jobs=-1, batch_size=1, prefer="threads")(delayed(run_trial)(ts) for ts in trial_seeds)
 
     for errs in results:
         if run_pp_flag:
@@ -209,6 +386,8 @@ def main():
             error_co_total += np.array(errs['co'])
         if run_sgd_flag:
             error_sgd_total += np.array(errs['sgd'])
+        if run_pg_flag:
+            error_pg_total += np.array(errs['pg'])
 
     if run_pp_flag:
         error_pp_mean = error_pp_total / num_trials
@@ -218,6 +397,8 @@ def main():
         error_co_mean = error_co_total / num_trials
     if run_sgd_flag:
         error_sgd_mean = error_sgd_total / num_trials
+    if run_pg_flag:
+        error_pg_mean = error_pg_total / num_trials
 
     plt.figure(figsize=(10, 6))
     if run_co_flag:
@@ -226,6 +407,8 @@ def main():
         plt.plot(error_pc_mean, color='limegreen', label='Prediction Correction')
     if run_sgd_flag:
         plt.plot(error_sgd_mean, color='cyan', label='SGD')
+    if run_pg_flag:
+        plt.plot(error_pg_mean, color='magenta', label='ProxGrad')
     if run_pp_flag:
         plt.plot(error_pp_mean, color='red', label='Proposed (PP)')
     plt.yscale('log')
@@ -257,10 +440,78 @@ def main():
     plt.savefig(str(Path(result_dir) / filename))
     plt.show()
 
-    backup_script(Path(__file__), Path(result_dir))
+    run_started_at = datetime.now()
+    scripts_dir = Path(result_dir) / "scripts"
+    scripts_dir.mkdir(parents=True, exist_ok=True)
+    script_copies: Dict[str, str] = {}
+    run_script_copy = backup_script(Path(__file__), scripts_dir)
+    script_copies["run_linear"] = str(run_script_copy)
+    data_gen_path = Path(__file__).resolve().parent / "data_gen.py"
+    if data_gen_path.exists():
+        data_gen_copy = backup_script(data_gen_path, scripts_dir)
+        script_copies["data_gen"] = str(data_gen_copy)
+    if config.hyperparam_path is not None and config.hyperparam_path.is_file():
+        hyper_copy = backup_script(config.hyperparam_path, scripts_dir)
+        script_copies["hyperparams_json"] = str(hyper_copy)
+
+    metadata = {
+        "created_at": run_started_at.isoformat(),
+        "command": sys.argv,
+        "config": {
+            "num_trials": num_trials,
+            "seed_base": seed,
+            "trial_seeds": trial_seeds,
+            "N": N,
+            "T": T,
+            "sparsity": sparsity,
+            "max_weight": max_weight,
+            "std_e": std_e,
+        },
+        "methods": {
+            "pp": {"enabled": run_pp_flag, "hyperparams": {"r": r, "q": q, "rho": rho, "mu_lambda": mu_lambda}},
+            "pc": {"enabled": run_pc_flag, "hyperparams": {"lambda_reg": lambda_reg, "alpha": alpha, "beta": beta, "gamma": gamma, "P": P, "C": C}},
+            "co": {"enabled": run_co_flag, "hyperparams": {"lambda_reg": lambda_reg, "alpha": alpha, "beta_co": beta_co, "gamma": gamma, "C": C}},
+            "sgd": {"enabled": run_sgd_flag, "hyperparams": {"lambda_reg": lambda_reg, "alpha": alpha, "beta_sgd": beta_sgd, "C": C}},
+            "pg": {
+                "enabled": run_pg_flag,
+                "hyperparams": {
+                    "lambda_reg": lambda_pg,
+                    "step_scale": step_scale_pg,
+                    "step_size": step_size_pg,
+                    "use_fista": use_fista_pg,
+                    "use_backtracking": use_backtracking_pg,
+                    "max_iter": max_iter_pg,
+                    "tol": tol_pg,
+                },
+            },
+        },
+        "generator": {
+            "function": "code.data_gen.generate_linear_X_with_exog",
+            "kwargs": {
+                "s_type": "random",
+                "t_min": 0.5,
+                "t_max": 1.0,
+                "z_dist": "uniform01",
+            },
+        },
+        "results": {
+            "figure": filename,
+            "figure_path": str(Path(result_dir) / filename),
+            "metrics": {
+                "pp": error_pp_mean.tolist() if run_pp_flag else None,
+                "pc": error_pc_mean.tolist() if run_pc_flag else None,
+                "co": error_co_mean.tolist() if run_co_flag else None,
+                "sgd": error_sgd_mean.tolist() if run_sgd_flag else None,
+                "pg": error_pg_mean.tolist() if run_pg_flag else None,
+            },
+        },
+        "snapshots": script_copies,
+        "hyperparam_json": str(config.hyperparam_path) if config.hyperparam_path is not None else None,
+        "result_dir": str(result_dir),
+    }
+    meta_name = f"{Path(filename).stem}_meta.json"
+    save_json(metadata, Path(result_dir), name=meta_name)
 
 
 if __name__ == "__main__":
     main()
-
-
