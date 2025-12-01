@@ -6,9 +6,11 @@
 ## プロジェクト構造
 
 - **`code/`**: 実験実行用スクリプト、データ生成、ハイパーパラメータチューニング
+  - **`config.py`**: 🔧 **すべてのシミュレーション設定を一元管理**
   - `run_*.py`: 各種シナリオの実行スクリプト
   - `data_gen.py`: シミュレーションデータ生成
   - `tune_and_run.py`: チューニングと実行を一括で行うスクリプト
+  - `hyperparam_tuning.py`: ハイパーパラメータチューニング
 - **`models/`**: アルゴリズムの実装
   - `tvgti_pc/`: Prediction-Correction 法 (PC-SEM)
   - `pp_exog.py`: Proximal Projection 法 (PP-SEM)
@@ -27,50 +29,133 @@
 - tqdm
 - joblib
 - scipy
+- optuna
 
 ## 使用方法
 
-本プロジェクトはパッケージとして構成されているため、ルートディレクトリから `-m` オプションを使用してモジュールとして実行します。
+### ⚠️ 重要: 設定は `code/config.py` で一元管理
 
-### 1. 実験の実行
+**すべてのシミュレーション条件は `code/config.py` で設定してください。**
+コマンドライン引数による設定は非推奨です。
 
-3つの主要な構造変化シナリオ（Piecewise, Linear, Brownian）に対応したスクリプトが用意されています。
+### 設定の変更方法
 
-#### Piecewise (区分一定の変化)
-```bash
-/User/fmjp/venv/default/bin/python -m code.run_piecewise
+`code/config.py` を開いて、`CONFIG` インスタンスの値を編集します:
+
+```python
+# code/config.py の CONFIG を編集
+
+CONFIG = SimulationConfig(
+    # 実行する手法
+    methods=MethodFlags(
+        pp=True,   # Proposed (PP)
+        pc=True,   # Prediction Correction
+        co=True,   # Correction Only
+        sgd=True,  # SGD
+        pg=False,  # Proximal Gradient (バッチ法)
+    ),
+    
+    # シナリオ共通パラメータ
+    common=CommonParams(
+        N=20,           # ノード数
+        T=1000,         # 時系列長
+        sparsity=0.7,   # スパース性
+        max_weight=0.5, # 最大重み
+        std_e=0.05,     # ノイズ標準偏差
+        seed=3,         # 乱数シード
+    ),
+    
+    # Piecewiseシナリオのパラメータ
+    piecewise=PiecewiseParams(
+        K=4,  # 変化点の数
+    ),
+    
+    # チューニング設定
+    tuning=TuningParams(
+        tuning_trials=300,        # Optunaの試行回数
+        tuning_runs_per_trial=1,  # 各試行での実行回数
+        truncation_horizon=400,   # 打ち切りステップ数
+    ),
+    
+    # 実行設定
+    run=RunParams(
+        num_trials=100,  # モンテカルロ試行回数
+    ),
+    
+    # 実行モード
+    skip_tuning=False,      # True: チューニングをスキップ
+    skip_simulation=False,  # True: シミュレーションをスキップ
+    hyperparam_json=None,   # 既存のハイパラJSONを使用する場合のパス
+)
 ```
 
-#### Linear (線形変化)
+### 1. 現在の設定を確認
+
 ```bash
-/User/fmjp/venv/default/bin/python -m code.run_linear
+make config
+# または
+/Users/fmjp/venv/default/bin/python code/config.py
 ```
 
-#### Brownian (ブラウン運動による変化)
+### 2. 実験の実行
+
+#### Piecewise シナリオ（チューニング → シミュレーション）
 ```bash
-/User/fmjp/venv/default/bin/python -m code.run_brownian
+make piecewise
+# または
+/Users/fmjp/venv/default/bin/python -m code.tune_and_run piecewise
 ```
 
-### 2. ハイパーパラメータチューニングと実行
-
-`tune_and_run.py` を使用して、ハイパーパラメータの探索と、最適パラメータを用いた実験を一括で行うことができます。
-
-**実行例 (Piecewiseシナリオ):**
+#### Linear シナリオ（チューニング → シミュレーション）
 ```bash
-/User/fmjp/venv/default/bin/python -m code.tune_and_run piecewise \
-  --N 20 --T 1000 --sparsity 0.7 --max_weight 0.5 --std_e 0.05 --K 4 \
-  --tuning_trials 30 --tuning_runs_per_trial 5
+make linear
+# または
+/Users/fmjp/venv/default/bin/python -m code.tune_and_run linear
 ```
 
-### パラメータ設定
+### 3. シミュレーションのみ実行
 
-各実行スクリプトはコマンドライン引数で実験条件（ノード数 `N`、時系列長 `T`、スパース性 `sparsity` など）を調整可能です。
-詳細なパラメータ設定やシナリオごとの仕様については、[code/README.md](code/README.md) および [agent.md](agent.md) を参照してください。
+既存のハイパラJSONを使用する場合:
+
+```bash
+# config.py の hyperparam_json にパスを設定するか、コマンドラインで指定
+/Users/fmjp/venv/default/bin/python -m code.run_piecewise --hyperparam_json path/to/hyperparams.json
+```
+
+### 設定項目一覧
+
+| カテゴリ | 設定項目 | 説明 |
+|---------|---------|------|
+| **methods** | pp, pc, co, sgd, pg | 実行する手法のON/OFF |
+| **common** | N, T, sparsity, max_weight, std_e, seed | シミュレーション共通パラメータ |
+| **piecewise** | K | 変化点の数（Piecewiseシナリオ用） |
+| **tuning** | tuning_trials, tuning_runs_per_trial, truncation_horizon | チューニング設定 |
+| **search_spaces** | pp, pc, co, sgd, pg | 各手法のハイパラ探索範囲 |
+| **hyperparams** | pp, pc, co, sgd, pg | デフォルトハイパーパラメータ |
+| **run** | num_trials | モンテカルロ試行回数 |
+| **output** | result_root, subdir_* | 出力先ディレクトリ |
+
+### 探索範囲のカスタマイズ
+
+ハイパーパラメータチューニングの探索範囲も `config.py` で設定できます:
+
+```python
+# config.py の search_spaces を編集
+search_spaces=SearchSpaces(
+    pp=PPSearchSpace(
+        rho=SearchRange(low=1e-6, high=1e-1, log=True),
+        mu_lambda=SearchRange(low=1e-4, high=1.0, log=True),
+    ),
+    pc=PCSearchSpace(
+        lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True),
+        # ... 他のパラメータ
+    ),
+),
+```
 
 ## 出力
 
 実験結果は `result/` ディレクトリ内に日付・シナリオごとのフォルダで保存されます。
 - **images/**: 結果のプロット画像
 - **meta.json**: 実験設定や結果の数値データを含むメタデータ
-- **scripts/**: 実行時のスクリプトのバックアップ
-
+- **scripts/**: 実行時のスクリプトのバックアップ（config.py を含む）

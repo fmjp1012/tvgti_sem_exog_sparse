@@ -1,0 +1,212 @@
+{
+  "created_at": "2025-12-01T19:07:59.088382",
+  "command": [
+    "/Users/fmjp/Desktop/lab/simu/tvgti_sem_exog_sparse/code/run_piecewise.py",
+    "--hyperparam_json",
+    "result/251201/exog_sparse_tuning/piecewise_best_hyperparams_20251201_190757.json"
+  ],
+  "config": {
+    "num_trials": 100,
+    "seed_base": 3,
+    "trial_seeds": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72,
+      73,
+      74,
+      75,
+      76,
+      77,
+      78,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      92,
+      93,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100,
+      101,
+      102
+    ],
+    "N": 40,
+    "T": 10,
+    "sparsity": 0.7,
+    "max_weight": 0.5,
+    "std_e": 0.05,
+    "K": 4
+  },
+  "methods": {
+    "pp": {
+      "enabled": true,
+      "hyperparams": {
+        "r": 50,
+        "q": 5,
+        "rho": 4.34373236820352e-05,
+        "mu_lambda": 0.017326089277581624
+      }
+    },
+    "pc": {
+      "enabled": false,
+      "hyperparams": {
+        "lambda_reg": 0.001,
+        "alpha": 0.01,
+        "beta": 0.01,
+        "gamma": 0.9,
+        "P": 1,
+        "C": 1
+      }
+    },
+    "co": {
+      "enabled": false,
+      "hyperparams": {
+        "lambda_reg": 0.001,
+        "alpha": 0.01,
+        "beta_co": 0.02,
+        "gamma": 0.9,
+        "C": 1
+      }
+    },
+    "sgd": {
+      "enabled": false,
+      "hyperparams": {
+        "lambda_reg": 0.001,
+        "alpha": 0.01,
+        "beta_sgd": 0.0269,
+        "C": 1
+      }
+    },
+    "pg": {
+      "enabled": false,
+      "hyperparams": {
+        "lambda_reg": 0.001,
+        "step_scale": 1.0,
+        "step_size": null,
+        "use_fista": true,
+        "use_backtracking": false,
+        "max_iter": 500,
+        "tol": 0.0001
+      }
+    }
+  },
+  "generator": {
+    "function": "code.data_gen.generate_piecewise_X_with_exog",
+    "kwargs": {
+      "s_type": "random",
+      "t_min": 0.5,
+      "t_max": 1.0,
+      "z_dist": "uniform01"
+    }
+  },
+  "results": {
+    "figure": "piecewise_K=4_N=40_T=10_maxweight=0.5_mulambda=0.017326089277581624_num_trials=100_q=5_r=50_rho=4.34373236820352e-05_seed=3_stde=0.05.png",
+    "figure_path": "result/251201/exog_sparse_piecewise/images/piecewise_K=4_N=40_T=10_maxweight=0.5_mulambda=0.017326089277581624_num_trials=100_q=5_r=50_rho=4.34373236820352e-05_seed=3_stde=0.05.png",
+    "metrics": {
+      "pp": [
+        0.9996937983959966,
+        0.9993182459232416,
+        0.99991960959396,
+        0.99973050302995,
+        0.9999729289900317,
+        0.999866450400983,
+        1.0000365514116494,
+        0.9999818221064966,
+        0.9998794303735596,
+        0.9997369240291206
+      ],
+      "pc": null,
+      "co": null,
+      "sgd": null,
+      "pg": null
+    }
+  },
+  "snapshots": {
+    "run_piecewise": "result/251201/exog_sparse_piecewise/images/scripts/run_piecewise.py",
+    "config": "result/251201/exog_sparse_piecewise/images/scripts/config.py",
+    "data_gen": "result/251201/exog_sparse_piecewise/images/scripts/data_gen.py",
+    "hyperparams_json": "result/251201/exog_sparse_piecewise/images/scripts/piecewise_best_hyperparams_20251201_190757.json"
+  },
+  "hyperparam_json": "result/251201/exog_sparse_tuning/piecewise_best_hyperparams_20251201_190757.json",
+  "result_dir": "result/251201/exog_sparse_piecewise/images"
+}
