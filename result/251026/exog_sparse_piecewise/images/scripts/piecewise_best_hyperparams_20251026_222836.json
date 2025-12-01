@@ -1,0 +1,30 @@
+{
+  "pp": {
+    "r": 50,
+    "q": 5,
+    "rho": 0.001,
+    "mu_lambda": 0.05
+  },
+  "pc": {
+    "lambda_reg": 0.00046009577996877386,
+    "alpha": 0.09155893213815058,
+    "beta": 0.0022201825178974205,
+    "gamma": 0.8793236492090428,
+    "P": 2,
+    "C": 5
+  },
+  "co": {
+    "beta_co": 0.02
+  },
+  "sgd": {
+    "beta_sgd": 0.0269
+  },
+  "pg": {
+    "lambda_reg": 0.001,
+    "step_scale": 1.0,
+    "use_fista": true,
+    "use_backtracking": false,
+    "max_iter": 500,
+    "tol": 0.0001
+  }
+}

@@ -5,6 +5,7 @@ import copy
 import subprocess
 import sys
 from pathlib import Path
+from turtle import Turtle
 from typing import Any, Dict, Iterable, Optional, Tuple
 import datetime as dt
 
@@ -173,7 +174,7 @@ SCENARIO_TUNING_DEFAULTS: Dict[str, Dict[str, object]] = {
         "K": 4,
         "tuning_trials": 300,
         "tuning_runs_per_trial": 1,
-        "seed": 3,
+        "seed": 4,
         "methods": ",".join(SUPPORTED_METHODS),
     },
     "linear": {
@@ -236,7 +237,7 @@ USER_ARG_OVERRIDES: Dict[str, Dict[str, Dict[str, object]]] = {
         "tuning_trials": None,
         "tuning_runs_per_trial": None,
         "seed": None,
-        "methods": None,
+        "methods": "pp,pc,co,sgd",
         # 探索範囲の上書き (SEARCH_OVERRIDE_SPECS)
         "pp_rho_low": None,
         "pp_rho_high": None,
@@ -299,7 +300,7 @@ USER_ARG_OVERRIDES: Dict[str, Dict[str, Dict[str, object]]] = {
         "run_sgd": None,
         "no_sgd": None,
         "run_pg": None,
-        "no_pg": None,
+        "no_pg": True,
         "run_pp": None,
         "no_pp": None,
         "hyperparam_json": None,

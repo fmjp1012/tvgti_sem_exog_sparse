@@ -84,6 +84,27 @@ class PredictionCorrectionSEM:
     def _left_diag_mul(diagonal: np.ndarray, matrix: np.ndarray) -> np.ndarray:
         return diagonal[:, None] * matrix
 
+    def _adaptive_step(self, base_step: Optional[float], *matrices: np.ndarray) -> float:
+        """
+        Scale the user-provided step size by the magnitude of the available covariance
+        estimates so that the effective step does not explode when the covariances spike.
+        """
+        if base_step in (None, 0.0):
+            return 0.0
+
+        max_norm = 0.0
+        for mat in matrices:
+            if mat is None or mat.size == 0:
+                continue
+            norm = float(np.linalg.norm(mat, ord="fro"))
+            if np.isnan(norm) or np.isinf(norm):
+                continue
+            if norm > max_norm:
+                max_norm = norm
+
+        denom = max(1.0, max_norm)
+        return float(base_step) / denom
+
     # ------------------------------------------------------------------ #
     # Gradient related computations
     # ------------------------------------------------------------------ #
@@ -121,18 +142,20 @@ class PredictionCorrectionSEM:
         if self.P <= 0:
             return S_pred, T_pred
 
-        grad_td_scale = self.lambda_reg * self.eta_S
+        eta_S = self._adaptive_step(self.eta_S, self.Sigma_xx, self.delta_xx)
+        grad_td_scale = self.lambda_reg * eta_S
+        eta_T = self._adaptive_step(self.eta_T, self.Sigma_zz, self.delta_zz) if self.use_exog else 0.0
         for _ in range(self.P):
             grad_S = self._gradient_S(S_pred, T_pred, self.Sigma_xx, self.Sigma_xz)
             td_grad_S = self._gradient_S(S_pred, T_pred, self.delta_xx, self.delta_xz)
-            S_tmp = S_pred - self.eta_S * (grad_S + td_grad_S)
+            S_tmp = S_pred - eta_S * (grad_S + td_grad_S)
             S_tmp = self._prox_l1_offdiag(S_tmp, grad_td_scale)
             S_pred = self._project_diag_zero(S_tmp)
 
-            if self.use_exog and self.eta_T not in (None, 0.0):
+            if self.use_exog and eta_T:
                 grad_T = self._gradient_T_diag(S_pred, T_pred, self.Sigma_xz, self.Sigma_zz)
                 td_grad_T = self._gradient_T_diag(S_pred, T_pred, self.delta_xz, self.delta_zz)
-                T_pred = T_pred - self.eta_T * (grad_T + td_grad_T)
+                T_pred = T_pred - eta_T * (grad_T + td_grad_T)
         return S_pred, T_pred
 
     def _correction_step(self) -> Tuple[np.ndarray, np.ndarray]:
@@ -141,14 +164,16 @@ class PredictionCorrectionSEM:
         if self.C <= 0:
             return S_corr, T_corr
 
-        prox_threshold = self.lambda_reg * self.eta_S
+        eta_S = self._adaptive_step(self.eta_S, self.Sigma_xx)
+        prox_threshold = self.lambda_reg * eta_S
+        eta_T = self._adaptive_step(self.eta_T, self.Sigma_zz) if self.use_exog else 0.0
         for _ in range(self.C):
             grad_S = self._gradient_S(S_corr, T_corr, self.Sigma_xx, self.Sigma_xz)
-            S_corr = self._prox_l1_offdiag(S_corr - self.eta_S * grad_S, prox_threshold)
+            S_corr = self._prox_l1_offdiag(S_corr - eta_S * grad_S, prox_threshold)
 
-            if self.use_exog and self.eta_T not in (None, 0.0):
+            if self.use_exog and eta_T:
                 grad_T = self._gradient_T_diag(S_corr, T_corr, self.Sigma_xz, self.Sigma_zz)
-                T_corr = T_corr - self.eta_T * grad_T
+                T_corr = T_corr - eta_T * grad_T
 
         return S_corr, T_corr
 

@@ -126,20 +126,20 @@ DEFAULT_SEARCH_SPACES: Dict[str, Dict[str, Dict[str, Any]]] = {
     },
     "pc": {
         "lambda_reg": {"type": "float", "low": 1e-5, "high": 1e-2, "log": True},
-        "alpha": {"type": "float", "low": 1e-6, "high": 1e-3, "log": True},
-        "beta_pc": {"type": "float", "low": 1e-6, "high": 1e-2, "log": True},
+        "alpha": {"type": "float", "low": 1e-6, "high": 1e-1, "log": True},
+        "beta_pc": {"type": "float", "low": 1e-6, "high": 1e-1, "log": True},
         "gamma": {"type": "float", "low": 0.85, "high": 0.999, "log": False},
         "P": {"type": "int", "low": 0, "high": 2, "step": 1},
         "C": {"type": "categorical", "choices": [1, 2, 5]},
     },
     "co": {
-        "alpha": {"type": "float", "low": 1e-6, "high": 1e-3, "log": True},
+        "alpha": {"type": "float", "low": 1e-6, "high": 1e-1, "log": True},
         "beta_co": {"type": "float", "low": 1e-6, "high": 1e-1, "log": True},
         "gamma": {"type": "float", "low": 0.85, "high": 0.999, "log": False},
         "C": {"type": "categorical", "choices": [1, 2, 5]},
     },
     "sgd": {
-        "alpha": {"type": "float", "low": 1e-6, "high": 1e-3, "log": True},
+        "alpha": {"type": "float", "low": 1e-6, "high": 1e-1, "log": True},
         "beta_sgd": {"type": "float", "low": 1e-6, "high": 1e-1, "log": True},
     },
     "pg": {
