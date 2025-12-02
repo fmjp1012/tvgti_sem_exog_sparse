@@ -7,7 +7,8 @@
 
 - **`code/`**: 実験実行用スクリプト、データ生成、ハイパーパラメータチューニング
   - **`config.py`**: 🔧 **すべてのシミュレーション設定を一元管理**
-  - `run_*.py`: 各種シナリオの実行スクリプト
+  - `run_*.py`: 各種シナリオ（Piecewise, Linear, Brownian）のモンテカルロシミュレーション実行
+  - `run_*_once.py`: 各種シナリオの単発実行用スクリプト（デバッグ・確認用）
   - `data_gen.py`: シミュレーションデータ生成
   - `tune_and_run.py`: チューニングと実行を一括で行うスクリプト
   - `hyperparam_tuning.py`: ハイパーパラメータチューニング
@@ -17,6 +18,7 @@
 - **`utils/`**: ユーティリティ（プロット、データIO、行列計算など）
 - **`result/`**: 実験結果（画像、メタデータ、実行スクリプトのバックアップ）の出力先
 - **`thesis/`**: 論文原稿（LaTeX）
+- **`Makefile`**: 実行コマンド管理
 
 ## 環境要件
 
@@ -30,6 +32,7 @@
 - joblib
 - scipy
 - optuna
+- cvxpy
 
 ## 使用方法
 
@@ -40,54 +43,8 @@
 
 ### 設定の変更方法
 
-`code/config.py` を開いて、`CONFIG` インスタンスの値を編集します:
-
-```python
-# code/config.py の CONFIG を編集
-
-CONFIG = SimulationConfig(
-    # 実行する手法
-    methods=MethodFlags(
-        pp=True,   # Proposed (PP)
-        pc=True,   # Prediction Correction
-        co=True,   # Correction Only
-        sgd=True,  # SGD
-        pg=False,  # Proximal Gradient (バッチ法)
-    ),
-    
-    # シナリオ共通パラメータ
-    common=CommonParams(
-        N=20,           # ノード数
-        T=1000,         # 時系列長
-        sparsity=0.7,   # スパース性
-        max_weight=0.5, # 最大重み
-        std_e=0.05,     # ノイズ標準偏差
-        seed=3,         # 乱数シード
-    ),
-    
-    # Piecewiseシナリオのパラメータ
-    piecewise=PiecewiseParams(
-        K=4,  # 変化点の数
-    ),
-    
-    # チューニング設定
-    tuning=TuningParams(
-        tuning_trials=300,        # Optunaの試行回数
-        tuning_runs_per_trial=1,  # 各試行での実行回数
-        truncation_horizon=400,   # 打ち切りステップ数
-    ),
-    
-    # 実行設定
-    run=RunParams(
-        num_trials=100,  # モンテカルロ試行回数
-    ),
-    
-    # 実行モード
-    skip_tuning=False,      # True: チューニングをスキップ
-    skip_simulation=False,  # True: シミュレーションをスキップ
-    hyperparam_json=None,   # 既存のハイパラJSONを使用する場合のパス
-)
-```
+`code/config.py` を開いて、`CONFIG` インスタンスの値を編集します。
+（詳細は `code/config.py` 内のコメントを参照）
 
 ### 1. 現在の設定を確認
 
@@ -97,32 +54,66 @@ make config
 /Users/fmjp/venv/default/bin/python code/config.py
 ```
 
-### 2. 実験の実行
+### 2. 実験の実行（Makefile利用）
 
-#### Piecewise シナリオ（チューニング → シミュレーション）
+`Makefile` を使用して、チューニングからシミュレーションまでを一括実行できます。
+
+#### フォアグラウンド実行（SSH接続中のみ）
+
 ```bash
+# Piecewise シナリオ
 make piecewise
-# または
-/Users/fmjp/venv/default/bin/python -m code.tune_and_run piecewise
-```
 
-#### Linear シナリオ（チューニング → シミュレーション）
-```bash
+# Linear シナリオ
 make linear
-# または
-/Users/fmjp/venv/default/bin/python -m code.tune_and_run linear
+
+# チューニングのみ
+make tune_piecewise
+make tune_linear
+
+# シミュレーションのみ
+make run_piecewise
+make run_linear
 ```
 
-### 3. シミュレーションのみ実行
+#### バックグラウンド実行（SSH切断後も継続）
 
-既存のハイパラJSONを使用する場合:
+長時間かかる実験はバックグラウンド実行を推奨します。ログは `logs/` ディレクトリに保存されます。
 
 ```bash
-# config.py の hyperparam_json にパスを設定するか、コマンドラインで指定
-/Users/fmjp/venv/default/bin/python -m code.run_piecewise --hyperparam_json path/to/hyperparams.json
+# Piecewise シナリオ（チューニング＋実行）
+make bg_piecewise
+
+# Linear シナリオ（チューニング＋実行）
+make bg_linear
+
+# シミュレーションのみ（バックグラウンド）
+make bg_run_piecewise
+make bg_run_linear
+
+# ステータス確認
+make bg_status
+
+# ログのリアルタイム確認
+make bg_tail
+
+# 実行停止
+make bg_stop
 ```
 
-### 設定項目一覧
+### 3. 個別スクリプトの実行
+
+Brownian Motion シナリオや単発実行など、Makefile にターゲットがない場合は直接 Python モジュールとして実行します。
+
+```bash
+# Brownian Motion シナリオ
+/Users/fmjp/venv/default/bin/python -m code.run_brownian
+
+# 単発実行（Piecewise）
+/Users/fmjp/venv/default/bin/python -m code.run_piecewise_once
+```
+
+## 設定項目一覧
 
 | カテゴリ | 設定項目 | 説明 |
 |---------|---------|------|
@@ -134,24 +125,6 @@ make linear
 | **hyperparams** | pp, pc, co, sgd, pg | デフォルトハイパーパラメータ |
 | **run** | num_trials | モンテカルロ試行回数 |
 | **output** | result_root, subdir_* | 出力先ディレクトリ |
-
-### 探索範囲のカスタマイズ
-
-ハイパーパラメータチューニングの探索範囲も `config.py` で設定できます:
-
-```python
-# config.py の search_spaces を編集
-search_spaces=SearchSpaces(
-    pp=PPSearchSpace(
-        rho=SearchRange(low=1e-6, high=1e-1, log=True),
-        mu_lambda=SearchRange(low=1e-4, high=1.0, log=True),
-    ),
-    pc=PCSearchSpace(
-        lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True),
-        # ... 他のパラメータ
-    ),
-),
-```
 
 ## 出力
 

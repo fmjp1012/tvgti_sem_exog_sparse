@@ -29,7 +29,7 @@ from code.data_gen import generate_linear_X_with_exog
 from models.pp_exog import PPExogenousSEM
 from models.pg_batch import ProximalGradientBatchSEM, ProximalGradientConfig
 from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
-from utils.io.plotting import apply_style
+from utils.io.plotting import apply_style, plot_heatmaps
 from utils.io.results import backup_script, create_result_dir, make_result_filename, save_json
 
 
@@ -236,6 +236,7 @@ def main() -> None:
             rng=rng,
         )
         errors = {}
+        estimates_final = {"True": S_series[-1]}
         
         if run_pp_flag:
             S0 = np.zeros((N, N))
@@ -247,6 +248,7 @@ def main() -> None:
                 for t in range(T)
             ]
             errors['pp'] = error_pp
+            estimates_final['PP'] = S_hat_list[-1]
         
         if run_pc_flag:
             X = Y
@@ -260,6 +262,7 @@ def main() -> None:
                 for t in range(T)
             ]
             errors['pc'] = error_pc
+            estimates_final['PC'] = estimates_pc[-1]
         
         if run_co_flag:
             X = Y
@@ -273,6 +276,7 @@ def main() -> None:
                 for t in range(T)
             ]
             errors['co'] = error_co
+            estimates_final['CO'] = estimates_co[-1]
         
         if run_sgd_flag:
             X = Y
@@ -286,6 +290,7 @@ def main() -> None:
                 for t in range(T)
             ]
             errors['sgd'] = error_sgd
+            estimates_final['SGD'] = estimates_sgd[-1]
         
         if run_pg_flag:
             X = Y
@@ -307,8 +312,9 @@ def main() -> None:
                 for t in range(T)
             ]
             errors['pg'] = error_pg
+            estimates_final['PG'] = estimates_pg[-1]
         
-        return errors
+        return errors, estimates_final
     
     trial_seeds = [seed + i for i in range(num_trials)]
     error_pp_total = np.zeros(T) if run_pp_flag else None
@@ -322,7 +328,8 @@ def main() -> None:
             delayed(run_trial)(ts) for ts in trial_seeds
         )
     
-    for errs in results:
+    last_estimates = None
+    for errs, estimates_final in results:
         if run_pp_flag:
             error_pp_total += np.array(errs['pp'])
         if run_pc_flag:
@@ -333,6 +340,7 @@ def main() -> None:
             error_sgd_total += np.array(errs['sgd'])
         if run_pg_flag:
             error_pg_total += np.array(errs['pg'])
+        last_estimates = estimates_final
     
     error_pp_mean = error_pp_total / num_trials if run_pp_flag else None
     error_pc_mean = error_pc_total / num_trials if run_pc_flag else None
@@ -372,6 +380,16 @@ def main() -> None:
     result_dir = create_result_dir(cfg.output.result_root, cfg.output.subdir_linear, extra_tag='images')
     plt.savefig(str(Path(result_dir) / filename))
     plt.show()
+    
+    # ヒートマップ表示（最後の試行の最終時刻）
+    if last_estimates is not None:
+        heatmap_filename = filename.replace(".png", "_heatmap.png")
+        plot_heatmaps(
+            matrices=last_estimates,
+            save_path=Path(result_dir) / heatmap_filename,
+            title=f"Estimated vs True at t={T-1} (last trial)",
+            show=True,
+        )
     
     # メタデータ保存
     scripts_dir = Path(result_dir) / "scripts"

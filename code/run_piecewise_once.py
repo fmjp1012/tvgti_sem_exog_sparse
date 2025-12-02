@@ -13,7 +13,7 @@ from pathlib import Path
 from code.data_gen import generate_piecewise_X_with_exog
 from models.pp_exog import PPExogenousSEM
 from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
-from utils.io.plotting import apply_style
+from utils.io.plotting import apply_style, plot_heatmaps
 from utils.io.results import create_result_dir, backup_script, make_result_filename, save_json
 from models.tvgti_pc.time_varying_sem import TimeVaryingSEMWithL1Correction as PCSEM_L1C
 
@@ -36,7 +36,6 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--config", type=str, default=None, help="ハイパラ設定JSONのパス")
     parser.add_argument("--show_offline_line", type=int, default=0, help="オフラインNSEの横線を描画する(1)/しない(0)")
-    parser.add_argument("--save_heatmaps", type=int, default=0, help="推定と真値のヒートマップ比較を保存する(1)/しない(0)")
     parser.add_argument("--heatmap_time", type=int, default=-1, help="ヒートマップを描画する時刻t（-1で最終時刻）")
     # 問題スケール上書き
     parser.add_argument("--N", type=int, default=None, help="ノード数Nを上書き（既定20）")
@@ -200,34 +199,24 @@ def main():
     else:
         config_path = None
 
-    # ヒートマップ比較の保存（オプション）
-    if args.save_heatmaps:
-        t_idx = args.heatmap_time if args.heatmap_time >= 0 else (T - 1)
-        t_idx = max(0, min(T - 1, t_idx))
-        mats = {
-            'True': S_series[t_idx],
-            'PP': S_hat_list[t_idx],
-            'PC': estimates_pc[t_idx],
-            'CO': estimates_co[t_idx],
-            'SGD': estimates_sgd[t_idx],
-            'PC+L1C': estimates_pc_l1c[t_idx],
-        }
-        max_abs = max(float(np.max(np.abs(m))) for m in mats.values()) + 1e-12
-        fig, axes = plt.subplots(2, 3, figsize=(12, 8), constrained_layout=True)
-        axes = axes.ravel()
-        for ax, (title, mat) in zip(axes, mats.items()):
-            im = ax.imshow(mat, cmap='RdBu_r', vmin=-max_abs, vmax=max_abs, aspect='equal', interpolation='nearest')
-            ax.set_title(title)
-            ax.set_xticks([])
-            ax.set_yticks([])
-        cbar = fig.colorbar(im, ax=axes, location='right', shrink=0.9, pad=0.02)
-        # ラベルは不要
-        cbar.set_label("")
-        heatmap_filename = (f'timestamp{timestamp}_heatmaps_N{N}_notebook_filename{notebook_filename}_'
-                            f'T{T}_K{K}_seed{seed}_r{r}_q{q}_rho{rho}_mulambda{mu_lambda}_t{t_idx}.png')
-        fig.savefig(str(Path(result_dir) / heatmap_filename))
-        # 画面にも表示
-        plt.show()
+    # ヒートマップ表示
+    t_idx = args.heatmap_time if args.heatmap_time >= 0 else (T - 1)
+    t_idx = max(0, min(T - 1, t_idx))
+    heatmap_matrices = {
+        'True': S_series[t_idx],
+        'PP': S_hat_list[t_idx],
+        'PC': estimates_pc[t_idx],
+        'CO': estimates_co[t_idx],
+        'SGD': estimates_sgd[t_idx],
+        'PC+L1C': estimates_pc_l1c[t_idx],
+    }
+    heatmap_filename = filename.replace(".png", f"_heatmap_t{t_idx}.png")
+    plot_heatmaps(
+        matrices=heatmap_matrices,
+        save_path=Path(result_dir) / heatmap_filename,
+        title=f"Estimated vs True at t={t_idx}",
+        show=True,
+    )
 
     metadata = {
         "created_at": datetime.datetime.now().isoformat(),
@@ -248,7 +237,6 @@ def main():
                 "pp_mu_lambda": args.pp_mu_lambda,
                 "N_override": args.N,
                 "show_offline_line": bool(args.show_offline_line),
-                "save_heatmaps": bool(args.save_heatmaps),
                 "heatmap_time": args.heatmap_time,
             },
         },

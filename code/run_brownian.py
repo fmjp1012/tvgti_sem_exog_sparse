@@ -12,7 +12,7 @@ from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as
 
 from code.data_gen import generate_brownian_piecewise_X_with_exog
 from models.pp_exog import PPExogenousSEM
-from utils.io.plotting import apply_style
+from utils.io.plotting import apply_style, plot_heatmaps
 from utils.io.results import create_result_dir, backup_script, make_result_filename, save_json
 
 
@@ -67,6 +67,7 @@ def main():
             rng=rng,
         )
         errors = {}
+        estimates_final = {"True": S_series[-1]}
         if run_pp_flag:
             S0 = np.zeros((N, N))
             b0 = np.ones(N)
@@ -77,6 +78,7 @@ def main():
                 for t in range(T)
             ]
             errors['pp'] = error_pp
+            estimates_final['PP'] = S_hat_list[-1]
         if run_pc_flag:
             X = Y
             pc = PCSEM(
@@ -98,6 +100,7 @@ def main():
                 for t in range(T)
             ]
             errors['pc'] = error_pc
+            estimates_final['PC'] = estimates_pc[-1]
         if run_co_flag:
             X = Y
             co = PCSEM(
@@ -119,6 +122,7 @@ def main():
                 for t in range(T)
             ]
             errors['co'] = error_co
+            estimates_final['CO'] = estimates_co[-1]
         if run_sgd_flag:
             X = Y
             sgd = PCSEM(
@@ -140,7 +144,8 @@ def main():
                 for t in range(T)
             ]
             errors['sgd'] = error_sgd
-        return errors
+            estimates_final['SGD'] = estimates_sgd[-1]
+        return errors, estimates_final
 
     trial_seeds = [seed + i for i in range(num_trials)]
     error_pp_total = np.zeros(T) if run_pp_flag else None
@@ -151,7 +156,8 @@ def main():
     with tqdm_joblib(tqdm(desc="Progress", total=num_trials)):
         results = Parallel(n_jobs=-1, batch_size=1, prefer="threads")(delayed(run_trial)(ts) for ts in trial_seeds)
 
-    for errs in results:
+    last_estimates = None
+    for errs, estimates_final in results:
         if run_pp_flag:
             error_pp_total += np.array(errs['pp'])
         if run_pc_flag:
@@ -160,6 +166,7 @@ def main():
             error_co_total += np.array(errs['co'])
         if run_sgd_flag:
             error_sgd_total += np.array(errs['sgd'])
+        last_estimates = estimates_final
 
     if run_pp_flag:
         error_pp_mean = error_pp_total / num_trials
@@ -186,8 +193,6 @@ def main():
     plt.grid(True, which='both')
     plt.legend()
 
-    timestamp = datetime.datetime.now().strftime('%Y%m%d_%H%M%S')
-    notebook_filename = os.path.basename(__file__)
     filename = make_result_filename(
         prefix="brownian",
         params={
@@ -210,6 +215,16 @@ def main():
     figure_path = Path(result_dir) / filename
     plt.savefig(str(figure_path))
     plt.show()
+    
+    # ヒートマップ表示（最後の試行の最終時刻）
+    if last_estimates is not None:
+        heatmap_filename = filename.replace(".png", "_heatmap.png")
+        plot_heatmaps(
+            matrices=last_estimates,
+            save_path=Path(result_dir) / heatmap_filename,
+            title=f"Estimated vs True at t={T-1} (last trial)",
+            show=True,
+        )
 
     scripts_dir = Path(result_dir) / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
