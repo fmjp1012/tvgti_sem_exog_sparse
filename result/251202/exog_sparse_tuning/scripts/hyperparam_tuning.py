@@ -26,6 +26,7 @@ from models.pp_exog import PPExogenousSEM
 from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
 from models.pg_batch import ProximalGradientBatchSEM, ProximalGradientConfig
 from utils.io.results import create_result_dir, backup_script, save_json
+from utils.offline_solver import solve_offline_sem_lasso_batch
 from numpy.random import SeedSequence, Generator
 
 
@@ -279,10 +280,32 @@ def tune_methods_for_scenario(
     T_tune = min(T, truncation_horizon)
     penalty_value = 1e6
     method_ids = {"pp": 0, "pc": 1, "co": 2, "sgd": 3, "pg": 4}
+    
+    # 評価指標の設定を取得
+    error_normalization = cfg.metric.error_normalization
+    # offline_lambda_l1 は Optuna で探索する（error_normalization == "offline_solution" の場合）
 
     def make_rng(method: str, trial_number: int, run_index: int) -> Generator:
         entropy = [seed, method_ids[method], trial_number, run_index]
         return np.random.default_rng(SeedSequence(entropy))
+    
+    def compute_error_for_tuning(
+        S_hat: np.ndarray, 
+        S_true: np.ndarray, 
+        S_offline: Optional[np.ndarray], 
+        eps: float = 1e-12
+    ) -> float:
+        """チューニング用の誤差計算（正規化方法に応じて分母を変更）"""
+        err = np.linalg.norm(S_hat - S_true, ord="fro")
+        if error_normalization == "offline_solution" and S_offline is not None:
+            normalizer = np.linalg.norm(S_true - S_offline, ord="fro") + eps
+            return err / normalizer
+        return err
+    
+    def suggest_offline_lambda(trial: optuna.trial.Trial) -> float:
+        """オフライン解のL1正則化パラメータを探索"""
+        offline_space = _resolve_param_space(search_spaces, "offline", "offline_lambda_l1")
+        return _suggest_from_space(trial, "offline_lambda_l1", offline_space)
 
     progress_queue: Queue[Dict[str, Any]] = Queue()
     pc_params_lock = threading.Lock()
@@ -333,6 +356,10 @@ def tune_methods_for_scenario(
         mu_lambda_suggested = _suggest_from_space(
             trial, "mu_lambda", _resolve_param_space(search_spaces, "pp", "mu_lambda")
         )
+        
+        # オフライン解のlambdaを探索（必要な場合）
+        offline_lambda_l1 = suggest_offline_lambda(trial) if error_normalization == "offline_solution" else None
+        
         errs = []
         for run_idx in range(tuning_runs_per_trial):
             rng = make_rng("pp", trial.number, run_idx)
@@ -341,7 +368,13 @@ def tune_methods_for_scenario(
             b0 = np.ones(N)
             model = PPExogenousSEM(N, S0, b0, r=r_suggested, q=q_suggested, rho=rho_suggested, mu_lambda=mu_lambda_suggested)
             S_hat_list, _ = model.run(Y_gen, U_gen)
-            err = np.linalg.norm(S_hat_list[-1] - S_ser[-1], ord="fro")
+            
+            # オフライン解を計算（必要な場合）
+            S_offline = None
+            if error_normalization == "offline_solution":
+                S_offline = solve_offline_sem_lasso_batch(Y_gen, U_gen, offline_lambda_l1)
+            
+            err = compute_error_for_tuning(S_hat_list[-1], S_ser[-1], S_offline)
             if not np.isfinite(err):
                 err = penalty_value
             errs.append(err)
@@ -356,6 +389,10 @@ def tune_methods_for_scenario(
         gamma_suggested = _suggest_from_space(trial, "gamma", _resolve_param_space(search_spaces, "pc", "gamma"))
         P_suggested = _suggest_from_space(trial, "P", _resolve_param_space(search_spaces, "pc", "P"))
         C_suggested = _suggest_from_space(trial, "C", _resolve_param_space(search_spaces, "pc", "C"))
+        
+        # オフライン解のlambdaを探索（必要な場合）
+        offline_lambda_l1 = suggest_offline_lambda(trial) if error_normalization == "offline_solution" else None
+        
         errs = []
         for run_idx in range(tuning_runs_per_trial):
             rng = make_rng("pc", trial.number, run_idx)
@@ -364,6 +401,12 @@ def tune_methods_for_scenario(
             Z = Z_gen[:, :T_tune]
             S_trunc = S_ser[:T_tune]
             S0_pc = np.zeros((N, N))
+            
+            # オフライン解を計算（必要な場合）
+            S_offline = None
+            if error_normalization == "offline_solution":
+                S_offline = solve_offline_sem_lasso_batch(X, Z, offline_lambda_l1)
+            
             try:
                 pc = PCSEM(
                     N,
@@ -379,7 +422,7 @@ def tune_methods_for_scenario(
                     T_init=T_mat,
                 )
                 estimates_pc, _ = pc.run(X, Z)
-                err_ts = [np.linalg.norm(estimates_pc[t] - S_trunc[t], ord="fro") for t in range(len(S_trunc))]
+                err_ts = [compute_error_for_tuning(estimates_pc[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
                 mean_err = float(np.mean(err_ts))
                 if not np.isfinite(mean_err):
                     mean_err = penalty_value
@@ -400,6 +443,10 @@ def tune_methods_for_scenario(
         )
         gamma_suggested = _suggest_from_space(trial, "gamma", _resolve_param_space(search_spaces, "co", "gamma"))
         C_suggested = _suggest_from_space(trial, "C", _resolve_param_space(search_spaces, "co", "C"))
+        
+        # オフライン解のlambdaを探索（必要な場合）
+        offline_lambda_l1 = suggest_offline_lambda(trial) if error_normalization == "offline_solution" else None
+        
         errs = []
         for run_idx in range(tuning_runs_per_trial):
             rng = make_rng("co", trial.number, run_idx)
@@ -415,6 +462,12 @@ def tune_methods_for_scenario(
             else:
                 alpha = float(snapshot.get("alpha", DEFAULT_HYPERPARAM_FALLBACK["pc"]["alpha"]))
             P = 0
+            
+            # オフライン解を計算（必要な場合）
+            S_offline = None
+            if error_normalization == "offline_solution":
+                S_offline = solve_offline_sem_lasso_batch(X, Z, offline_lambda_l1)
+            
             try:
                 co = PCSEM(
                     N,
@@ -430,7 +483,7 @@ def tune_methods_for_scenario(
                     T_init=T_mat,
                 )
                 estimates_co, _ = co.run(X, Z)
-                err_ts = [np.linalg.norm(estimates_co[t] - S_trunc[t], ord="fro") for t in range(len(S_trunc))]
+                err_ts = [compute_error_for_tuning(estimates_co[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
                 mean_err = float(np.mean(err_ts))
                 if not np.isfinite(mean_err):
                     mean_err = penalty_value
@@ -449,6 +502,10 @@ def tune_methods_for_scenario(
         beta_sgd_suggested = _suggest_from_space(
             trial, "beta_sgd", _resolve_param_space(search_spaces, "sgd", "beta_sgd")
         )
+        
+        # オフライン解のlambdaを探索（必要な場合）
+        offline_lambda_l1 = suggest_offline_lambda(trial) if error_normalization == "offline_solution" else None
+        
         errs = []
         for run_idx in range(tuning_runs_per_trial):
             rng = make_rng("sgd", trial.number, run_idx)
@@ -466,6 +523,12 @@ def tune_methods_for_scenario(
             gamma = 0.0
             P = 0
             C = int(snapshot.get("C", DEFAULT_HYPERPARAM_FALLBACK["pc"]["C"]))
+            
+            # オフライン解を計算（必要な場合）
+            S_offline = None
+            if error_normalization == "offline_solution":
+                S_offline = solve_offline_sem_lasso_batch(X, Z, offline_lambda_l1)
+            
             try:
                 sgd = PCSEM(
                     N,
@@ -481,7 +544,7 @@ def tune_methods_for_scenario(
                     T_init=T_mat,
                 )
                 estimates_sgd, _ = sgd.run(X, Z)
-                err_ts = [np.linalg.norm(estimates_sgd[t] - S_trunc[t], ord="fro") for t in range(len(S_trunc))]
+                err_ts = [compute_error_for_tuning(estimates_sgd[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
                 mean_err = float(np.mean(err_ts))
                 if not np.isfinite(mean_err):
                     mean_err = penalty_value
@@ -510,6 +573,9 @@ def tune_methods_for_scenario(
         max_iter_pg = int(best["pg"].get("max_iter", DEFAULT_HYPERPARAM_FALLBACK["pg"]["max_iter"]))
         tol_pg = float(best["pg"].get("tol", DEFAULT_HYPERPARAM_FALLBACK["pg"]["tol"]))
         use_backtracking_pg = bool(best["pg"].get("use_backtracking", DEFAULT_HYPERPARAM_FALLBACK["pg"]["use_backtracking"]))
+        
+        # オフライン解のlambdaを探索（必要な場合）
+        offline_lambda_l1 = suggest_offline_lambda(trial) if error_normalization == "offline_solution" else None
 
         errs = []
         for run_idx in range(tuning_runs_per_trial):
@@ -518,6 +584,12 @@ def tune_methods_for_scenario(
             X = Y_gen[:, :T_tune]
             Z = Z_gen[:, :T_tune]
             S_trunc = S_ser[:T_tune]
+            
+            # オフライン解を計算（必要な場合）
+            S_offline = None
+            if error_normalization == "offline_solution":
+                S_offline = solve_offline_sem_lasso_batch(X, Z, offline_lambda_l1)
+            
             config_pg = ProximalGradientConfig(
                 lambda_reg=float(lambda_reg_suggested),
                 step_size=None,
@@ -532,7 +604,7 @@ def tune_methods_for_scenario(
             model_pg = ProximalGradientBatchSEM(N, config_pg)
             try:
                 estimates_pg, _ = model_pg.run(X, Z)
-                err_ts = [np.linalg.norm(estimates_pg[t] - S_trunc[t], ord="fro") for t in range(len(S_trunc))]
+                err_ts = [compute_error_for_tuning(estimates_pg[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
                 mean_err = float(np.mean(err_ts))
                 if not np.isfinite(mean_err):
                     mean_err = penalty_value
@@ -685,9 +757,28 @@ def tune_methods_for_scenario(
             best["pg"]["step_scale"] = float(params["step_scale"])
         if "use_fista" in params:
             best["pg"]["use_fista"] = bool(params["use_fista"])
+    
+    # オフライン解のlambdaをチューニング結果から取得（最初に見つかったものを使用）
+    tuned_offline_lambda_l1 = None
+    if error_normalization == "offline_solution":
+        for method_name in ["pc", "pp", "co", "sgd", "pg"]:
+            if method_name in method_results:
+                params = method_results[method_name].get("params", {})
+                if "offline_lambda_l1" in params:
+                    tuned_offline_lambda_l1 = float(params["offline_lambda_l1"])
+                    break
+        # 見つからない場合は探索範囲の幾何平均を使用
+        if tuned_offline_lambda_l1 is None:
+            import math
+            offline_space = cfg.search_spaces.offline.offline_lambda_l1
+            tuned_offline_lambda_l1 = math.sqrt(offline_space.low * offline_space.high)
 
     best = {method: _clean_dict(params) for method, params in best.items()}
     initial_best_clean = {method: _clean_dict(params) for method, params in initial_best.items()}
+    
+    # チューニング結果に offline_lambda_l1 を追加（offline_solution モードの場合）
+    if error_normalization == "offline_solution" and tuned_offline_lambda_l1 is not None:
+        best["offline_lambda_l1"] = tuned_offline_lambda_l1
 
     summary = {
         "seed": seed,
@@ -695,6 +786,10 @@ def tune_methods_for_scenario(
         "tuning_runs_per_trial": tuning_runs_per_trial,
         "truncation_horizon": truncation_horizon,
         "generator_kwargs": {key: _to_python_value(val) for key, val in generator_kwargs.items()},
+        "metric": {
+            "error_normalization": error_normalization,
+            "offline_lambda_l1": tuned_offline_lambda_l1 if error_normalization == "offline_solution" else None,
+        },
         "initial_fallback": initial_best_clean,
         "search_spaces": _clean(search_spaces),
         "search_overrides": _clean(search_space_overrides) if search_space_overrides else {},

@@ -1,6 +1,7 @@
 import os
 import sys
 import datetime
+from typing import Optional
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -10,15 +11,29 @@ from tqdm_joblib import tqdm_joblib
 from joblib import Parallel, delayed
 from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
 
+from code.config import get_config
 from code.data_gen import generate_brownian_piecewise_X_with_exog
 from models.pp_exog import PPExogenousSEM
 from utils.io.plotting import apply_style, plot_heatmaps
 from utils.io.results import create_result_dir, backup_script, make_result_filename, save_json
+from utils.offline_solver import solve_offline_sem_lasso_batch
 
 
 def main():
     # プロット設定
     apply_style(use_latex=True, font_family="Times New Roman", base_font_size=15)
+
+    # config.py から評価指標設定を取得
+    cfg = get_config()
+    error_normalization = cfg.metric.error_normalization
+    
+    # offline_lambda_l1 の取得（探索範囲の幾何平均を使用）
+    offline_lambda_l1 = None
+    if error_normalization == "offline_solution":
+        # 探索範囲の幾何平均をデフォルトとして使用（対数スケール）
+        offline_space = cfg.search_spaces.offline.offline_lambda_l1
+        import math
+        offline_lambda_l1 = math.sqrt(offline_space.low * offline_space.high)
 
     run_pc_flag = True
     run_co_flag = True
@@ -50,6 +65,15 @@ def main():
     beta_co = 0.02
     beta_sgd = 0.0269
 
+    def compute_error(S_hat: np.ndarray, S_true: np.ndarray, S_offline: Optional[np.ndarray], eps: float = 1e-12) -> float:
+        """誤差を計算（正規化方法に応じて分母を変更）"""
+        numerator = np.linalg.norm(S_hat - S_true) ** 2
+        if error_normalization == "offline_solution" and S_offline is not None:
+            denominator = np.linalg.norm(S_true - S_offline) ** 2 + eps
+        else:
+            denominator = np.linalg.norm(S_true) ** 2 + eps
+        return float(numerator / denominator)
+
     def run_trial(trial_seed: int):
         rng = np.random.default_rng(trial_seed)
         S_series, T_mat, Z, Y = generate_brownian_piecewise_X_with_exog(
@@ -68,13 +92,20 @@ def main():
         )
         errors = {}
         estimates_final = {"True": S_series[-1]}
+        
+        # オフライン解を計算（必要な場合）
+        S_offline = None
+        if error_normalization == "offline_solution":
+            S_offline = solve_offline_sem_lasso_batch(Y, Z, offline_lambda_l1)
+            estimates_final['Offline'] = S_offline
+        
         if run_pp_flag:
             S0 = np.zeros((N, N))
             b0 = np.ones(N)
             model = PPExogenousSEM(N, S0, b0, r=r, q=q, rho=rho, mu_lambda=mu_lambda)
             S_hat_list, _ = model.run(Y, Z)
             error_pp = [
-                float((np.linalg.norm(S_hat_list[t] - S_series[t]) ** 2) / (np.linalg.norm(S_series[t]) ** 2 + 1e-12))
+                compute_error(S_hat_list[t], S_series[t], S_offline)
                 for t in range(T)
             ]
             errors['pp'] = error_pp
@@ -96,7 +127,7 @@ def main():
             )
             estimates_pc, _ = pc.run(X, Z)
             error_pc = [
-                float((np.linalg.norm(estimates_pc[t] - S_series[t]) ** 2) / (np.linalg.norm(S_series[t]) ** 2 + 1e-12))
+                compute_error(estimates_pc[t], S_series[t], S_offline)
                 for t in range(T)
             ]
             errors['pc'] = error_pc
@@ -118,7 +149,7 @@ def main():
             )
             estimates_co, _ = co.run(X, Z)
             error_co = [
-                float((np.linalg.norm(estimates_co[t] - S_series[t]) ** 2) / (np.linalg.norm(S_series[t]) ** 2 + 1e-12))
+                compute_error(estimates_co[t], S_series[t], S_offline)
                 for t in range(T)
             ]
             errors['co'] = error_co
@@ -140,7 +171,7 @@ def main():
             )
             estimates_sgd, _ = sgd.run(X, Z)
             error_sgd = [
-                float((np.linalg.norm(estimates_sgd[t] - S_series[t]) ** 2) / (np.linalg.norm(S_series[t]) ** 2 + 1e-12))
+                compute_error(estimates_sgd[t], S_series[t], S_offline)
                 for t in range(T)
             ]
             errors['sgd'] = error_sgd
@@ -247,6 +278,10 @@ def main():
             "std_e": std_e,
             "std_S": std_S,
             "seed_base": seed,
+        },
+        "metric": {
+            "error_normalization": error_normalization,
+            "offline_lambda_l1": offline_lambda_l1,
         },
         "methods": {
             "pp": {"enabled": run_pp_flag, "hyperparams": {"r": r, "q": q, "rho": rho, "mu_lambda": mu_lambda}},

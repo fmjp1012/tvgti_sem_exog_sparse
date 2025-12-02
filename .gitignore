@@ -2,6 +2,7 @@
 # Costom ignore
 matrix_cache/
 .DS_Store
+thesis/
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

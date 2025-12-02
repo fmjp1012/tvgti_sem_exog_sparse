@@ -1,0 +1,158 @@
+{
+  "created_at": "2025-12-02T14:14:24.211737",
+  "command": [
+    "/Users/fmjp/Desktop/lab/simu/tvgti_sem_exog_sparse/code/run_piecewise.py",
+    "--hyperparam_json",
+    "result/251202/exog_sparse_tuning/piecewise_best_hyperparams_20251202_141423.json"
+  ],
+  "config": {
+    "num_trials": 2,
+    "seed_base": 3,
+    "trial_seeds": [
+      3,
+      4
+    ],
+    "N": 5,
+    "T": 50,
+    "sparsity": 0.5,
+    "max_weight": 0.5,
+    "std_e": 0.05,
+    "K": 2
+  },
+  "metric": {
+    "error_normalization": "true_value",
+    "offline_lambda_l1": null
+  },
+  "methods": {
+    "pp": {
+      "enabled": true,
+      "hyperparams": {
+        "r": 50,
+        "q": 5,
+        "rho": 0.00032597254959994504,
+        "mu_lambda": 0.2306701018960684
+      }
+    },
+    "pc": {
+      "enabled": false,
+      "hyperparams": {
+        "lambda_reg": 0.001,
+        "alpha": 0.01,
+        "beta": 0.01,
+        "gamma": 0.9,
+        "P": 1,
+        "C": 1
+      }
+    },
+    "co": {
+      "enabled": false,
+      "hyperparams": {
+        "lambda_reg": 0.001,
+        "alpha": 0.01,
+        "beta_co": 0.02,
+        "gamma": 0.9,
+        "C": 1
+      }
+    },
+    "sgd": {
+      "enabled": false,
+      "hyperparams": {
+        "lambda_reg": 0.001,
+        "alpha": 0.01,
+        "beta_sgd": 0.0269,
+        "C": 1
+      }
+    },
+    "pg": {
+      "enabled": false,
+      "hyperparams": {
+        "lambda_reg": 0.001,
+        "step_scale": 1.0,
+        "step_size": null,
+        "use_fista": true,
+        "use_backtracking": false,
+        "max_iter": 500,
+        "tol": 0.0001
+      }
+    }
+  },
+  "generator": {
+    "function": "code.data_gen.generate_piecewise_X_with_exog",
+    "kwargs": {
+      "s_type": "random",
+      "t_min": 0.5,
+      "t_max": 1.0,
+      "z_dist": "uniform01"
+    }
+  },
+  "results": {
+    "figure": "piecewise_K=2_N=5_T=50_maxweight=0.5_mulambda=0.2306701018960684_num_trials=2_q=5_r=50_rho=0.00032597254959994504_seed=3_stde=0.05.png",
+    "figure_path": "result/251202/exog_sparse_piecewise/images/piecewise_K=2_N=5_T=50_maxweight=0.5_mulambda=0.2306701018960684_num_trials=2_q=5_r=50_rho=0.00032597254959994504_seed=3_stde=0.05.png",
+    "metrics": {
+      "pp": [
+        0.977435931427803,
+        0.9541334700117543,
+        0.9332543292271633,
+        0.9146443222529197,
+        0.8977158793035767,
+        0.8821922879320094,
+        0.8678044878631591,
+        0.8541738303352227,
+        0.8413491045659656,
+        0.8291775112695705,
+        0.8173940984847599,
+        0.8059349145800084,
+        0.7946476248252533,
+        0.783559053861973,
+        0.7726578231645798,
+        0.7618380036520283,
+        0.751102510070472,
+        0.7405361467303011,
+        0.7299278370156748,
+        0.7177919773421721,
+        0.701632834401551,
+        0.6732527114462687,
+        0.6407882287676705,
+        0.5831307764458915,
+        0.5312390279153236,
+        1.432651761333234,
+        1.4089775527172677,
+        1.3771308789102183,
+        1.3454223285063773,
+        1.3071389702817513,
+        1.2904326671547102,
+        1.2578612014071968,
+        1.2274510812941322,
+        1.1852908836500167,
+        1.1564186820340403,
+        1.1292794544611506,
+        1.114205337257382,
+        1.10594036819074,
+        1.1037179837034015,
+        1.1075698367966667,
+        1.115269271755865,
+        1.1258689026868,
+        1.137897265808715,
+        1.1495013210345286,
+        1.1632645965531248,
+        1.176139225026821,
+        1.188690971781155,
+        1.2029156741895664,
+        1.2176561623317679,
+        1.2311618056525238
+      ],
+      "pc": null,
+      "co": null,
+      "sgd": null,
+      "pg": null
+    }
+  },
+  "snapshots": {
+    "run_piecewise": "result/251202/exog_sparse_piecewise/images/scripts/run_piecewise.py",
+    "config": "result/251202/exog_sparse_piecewise/images/scripts/config.py",
+    "data_gen": "result/251202/exog_sparse_piecewise/images/scripts/data_gen.py",
+    "hyperparams_json": "result/251202/exog_sparse_piecewise/images/scripts/piecewise_best_hyperparams_20251202_141423.json"
+  },
+  "hyperparam_json": "result/251202/exog_sparse_tuning/piecewise_best_hyperparams_20251202_141423.json",
+  "result_dir": "result/251202/exog_sparse_piecewise/images"
+}

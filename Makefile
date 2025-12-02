@@ -1,8 +1,8 @@
 # ホスト名でローカル(Mac)とSSH先(サーバー)を自動判別
 HOSTNAME := $(shell hostname)
 
-# Mac (ローカル)
-ifeq ($(findstring mac,$(shell uname -s | tr A-Z a-z)),mac)
+# Mac (ローカル) - uname -s は Darwin を返す
+ifeq ($(findstring darwin,$(shell uname -s | tr A-Z a-z)),darwin)
     PYTHON ?= /Users/fmjp/venv/default/bin/python
 # Linux (SSH先サーバー)
 else

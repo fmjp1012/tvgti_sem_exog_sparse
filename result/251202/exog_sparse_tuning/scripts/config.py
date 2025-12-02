@@ -140,6 +140,12 @@ class PGSearchSpace:
 
 
 @dataclass
+class OfflineSearchSpace:
+    """オフライン解のハイパラ探索範囲"""
+    offline_lambda_l1: SearchRange = field(default_factory=lambda: SearchRange(low=1e-4, high=1.0, log=True))
+
+
+@dataclass
 class SearchSpaces:
     """全手法の探索範囲"""
     pp: PPSearchSpace = field(default_factory=PPSearchSpace)
@@ -147,6 +153,7 @@ class SearchSpaces:
     co: COSearchSpace = field(default_factory=COSearchSpace)
     sgd: SGDSearchSpace = field(default_factory=SGDSearchSpace)
     pg: PGSearchSpace = field(default_factory=PGSearchSpace)
+    offline: OfflineSearchSpace = field(default_factory=OfflineSearchSpace)
 
 
 # =============================================================================
@@ -207,6 +214,18 @@ class DefaultHyperparams:
 
 
 # =============================================================================
+# 評価指標設定
+# =============================================================================
+@dataclass
+class MetricParams:
+    """評価指標の設定"""
+    # 誤差の正規化方法を選択
+    # "true_value": 真の値のノルムで割る（従来の方法）
+    # "offline_solution": オフライン解のノルムで割る（offline_lambda_l1はOptunaで自動探索）
+    error_normalization: str = "true_value"
+
+
+# =============================================================================
 # 実行設定
 # =============================================================================
 @dataclass
@@ -262,6 +281,9 @@ class SimulationConfig:
     # 実行設定
     run: RunParams = field(default_factory=RunParams)
     
+    # 評価指標設定
+    metric: MetricParams = field(default_factory=MetricParams)
+    
     # 出力設定
     output: OutputParams = field(default_factory=OutputParams)
     
@@ -272,18 +294,25 @@ class SimulationConfig:
 
 
 # =============================================================================
+# ★★★ 設定モード切り替え ★★★
+# =============================================================================
+# True: テスト用の軽量設定（プログラム動作確認用、すぐに終わる）
+# False: 本番用設定（実際のシミュレーション用）
+USE_TEST_CONFIG = True
+
+# =============================================================================
 # ★★★ 設定を変更するにはここを編集してください ★★★
 # =============================================================================
 # 上部のクラス定義ではなく、以下の CONFIG インスタンスの値を変更してください。
 # クラス定義のデフォルト値を変更しても、ここで明示的に設定された値が優先されます。
 #
-CONFIG = SimulationConfig(
+CONFIG_MAIN = SimulationConfig(
     # 実行する手法（Trueにした手法のみ実行、コメントアウトで無効化可能）
     methods=MethodFlags(
-        # pp=True,
-        pc=True,
-        co=True,
-        sgd=True,
+        pp=True,
+        # pc=True,
+        # co=True,
+        # sgd=True,
         # pg=True,
     ),
     
@@ -318,9 +347,57 @@ CONFIG = SimulationConfig(
         tuning_seed=4,
     ),
     
+    # ハイパーパラメータ探索範囲
+    # 各パラメータの探索範囲をカスタマイズできます
+    # SearchRange(low, high, log=False, type="float", step=None, choices=None)
+    # - log=True: 対数スケールで探索
+    # - type: "float", "int", "categorical"
+    # - step: int型の場合のステップ
+    # - choices: categorical型の場合の選択肢リスト
+    search_spaces=SearchSpaces(
+        pp=PPSearchSpace(
+            rho=SearchRange(low=1e-6, high=1e-1, log=True),
+            mu_lambda=SearchRange(low=1e-4, high=1.0, log=True),
+        ),
+        pc=PCSearchSpace(
+            lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True),
+            alpha=SearchRange(low=1e-6, high=1e-1, log=True),
+            beta_pc=SearchRange(low=1e-6, high=1e-1, log=True),
+            gamma=SearchRange(low=0.85, high=0.999, log=False),
+            P=SearchRange(low=0, high=2, log=False, type="int", step=1),
+            C=SearchRange(low=0, high=0, log=False, type="categorical", choices=[1, 2, 5]),
+        ),
+        co=COSearchSpace(
+            alpha=SearchRange(low=1e-6, high=1e-1, log=True),
+            beta_co=SearchRange(low=1e-6, high=1e-1, log=True),
+            gamma=SearchRange(low=0.85, high=0.999, log=False),
+            C=SearchRange(low=0, high=0, log=False, type="categorical", choices=[1, 2, 5]),
+        ),
+        sgd=SGDSearchSpace(
+            alpha=SearchRange(low=1e-6, high=1e-1, log=True),
+            beta_sgd=SearchRange(low=1e-6, high=1e-1, log=True),
+        ),
+        pg=PGSearchSpace(
+            lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True),
+            step_scale=SearchRange(low=1e-6, high=1e-1, log=True),
+            use_fista=SearchRange(low=0, high=0, log=False, type="categorical", choices=[True, False]),
+        ),
+        offline=OfflineSearchSpace(
+            offline_lambda_l1=SearchRange(low=1e-4, high=1.0, log=True),
+        ),
+    ),
+    
     # 実行設定
     run=RunParams(
         num_trials=100,
+    ),
+    
+    # 評価指標設定
+    # "true_value": 真の値のノルムで割る（従来の方法）
+    # "offline_solution": オフライン解のノルムで割る（offline_lambda_l1はOptunaで自動探索）
+    metric=MetricParams(
+        # error_normalization="true_value",
+        error_normalization="offline_solution",
     ),
     
     # 出力設定
@@ -333,6 +410,111 @@ CONFIG = SimulationConfig(
     skip_simulation=False,
     hyperparam_json=None,  # 既存JSONを使う場合: Path("path/to/hyperparams.json")
 )
+
+# =============================================================================
+# テスト用設定（プログラム動作確認用・すぐに終わる軽量設定）
+# =============================================================================
+CONFIG_TEST = SimulationConfig(
+    # 実行する手法（テストでは1つだけ有効に）
+    methods=MethodFlags(
+        pp=True,
+        # pc=True,
+        # co=True,
+        # sgd=True,
+        # pg=True,
+    ),
+    
+    # テスト用の小さなパラメータ
+    common=CommonParams(
+        N=5,              # 小さなノード数
+        T=50,             # 短い時系列
+        sparsity=0.5,     # スパース性
+        max_weight=0.5,
+        std_e=0.05,
+        seed=3,
+    ),
+    
+    # Piecewiseシナリオのパラメータ
+    piecewise=PiecewiseParams(
+        K=2,  # 変化点の数（少なめ）
+    ),
+    
+    # データ生成パラメータ
+    data_gen=DataGenParams(
+        s_type="random",
+        t_min=0.5,
+        t_max=1.0,
+        z_dist="uniform01",
+    ),
+    
+    # テスト用の軽量チューニング設定
+    tuning=TuningParams(
+        tuning_trials=3,           # 試行回数を大幅削減
+        tuning_runs_per_trial=1,
+        truncation_horizon=30,     # 打ち切りも短く
+        tuning_seed=4,
+    ),
+    
+    # 探索範囲（本番と同じ）
+    search_spaces=SearchSpaces(
+        pp=PPSearchSpace(
+            rho=SearchRange(low=1e-6, high=1e-1, log=True),
+            mu_lambda=SearchRange(low=1e-4, high=1.0, log=True),
+        ),
+        pc=PCSearchSpace(
+            lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True),
+            alpha=SearchRange(low=1e-6, high=1e-1, log=True),
+            beta_pc=SearchRange(low=1e-6, high=1e-1, log=True),
+            gamma=SearchRange(low=0.85, high=0.999, log=False),
+            P=SearchRange(low=0, high=2, log=False, type="int", step=1),
+            C=SearchRange(low=0, high=0, log=False, type="categorical", choices=[1, 2, 5]),
+        ),
+        co=COSearchSpace(
+            alpha=SearchRange(low=1e-6, high=1e-1, log=True),
+            beta_co=SearchRange(low=1e-6, high=1e-1, log=True),
+            gamma=SearchRange(low=0.85, high=0.999, log=False),
+            C=SearchRange(low=0, high=0, log=False, type="categorical", choices=[1, 2, 5]),
+        ),
+        sgd=SGDSearchSpace(
+            alpha=SearchRange(low=1e-6, high=1e-1, log=True),
+            beta_sgd=SearchRange(low=1e-6, high=1e-1, log=True),
+        ),
+        pg=PGSearchSpace(
+            lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True),
+            step_scale=SearchRange(low=1e-6, high=1e-1, log=True),
+            use_fista=SearchRange(low=0, high=0, log=False, type="categorical", choices=[True, False]),
+        ),
+        offline=OfflineSearchSpace(
+            offline_lambda_l1=SearchRange(low=1e-4, high=1.0, log=True),
+        ),
+    ),
+    
+    # テスト用の少ない試行回数
+    run=RunParams(
+        num_trials=2,  # モンテカルロ試行も最小限
+    ),
+    
+    # 評価指標設定
+    metric=MetricParams(
+        error_normalization="true_value",  # テストではシンプルな方法で
+    ),
+    
+    # 出力設定
+    output=OutputParams(
+        result_root=Path("./result"),
+    ),
+    
+    # 実行モード
+    skip_tuning=False,
+    skip_simulation=False,
+    hyperparam_json=None,
+)
+
+# =============================================================================
+# 設定の切り替え
+# =============================================================================
+# USE_TEST_CONFIG の値に基づいて CONFIG を選択
+CONFIG = CONFIG_TEST if USE_TEST_CONFIG else CONFIG_MAIN
 
 
 # =============================================================================
@@ -405,6 +587,9 @@ def get_search_spaces_dict() -> Dict[str, Dict[str, Dict[str, Any]]]:
             "step_scale": search_range_to_dict(cfg.search_spaces.pg.step_scale),
             "use_fista": search_range_to_dict(cfg.search_spaces.pg.use_fista),
         },
+        "offline": {
+            "offline_lambda_l1": search_range_to_dict(cfg.search_spaces.offline.offline_lambda_l1),
+        },
     }
 
 
@@ -444,6 +629,14 @@ def get_default_hyperparams_dict() -> Dict[str, Dict[str, Any]]:
     }
 
 
+def get_metric_params_dict() -> Dict[str, Any]:
+    """評価指標設定を辞書形式で取得"""
+    cfg = get_config()
+    return {
+        "error_normalization": cfg.metric.error_normalization,
+    }
+
+
 def print_config_summary() -> None:
     """設定のサマリーを表示"""
     cfg = get_config()
@@ -451,6 +644,12 @@ def print_config_summary() -> None:
     print("=" * 60)
     print("シミュレーション設定サマリー")
     print("=" * 60)
+    
+    # テストモードかどうかを表示
+    if USE_TEST_CONFIG:
+        print("\n*** テストモード（軽量設定）で実行中 ***")
+    else:
+        print("\n*** 本番モードで実行中 ***")
     
     print("\n--- 実行する手法 ---")
     print(f"  PP:  {'ON' if cfg.methods.pp else 'OFF'}")
@@ -474,6 +673,11 @@ def print_config_summary() -> None:
     print(f"  trials: {cfg.tuning.tuning_trials}")
     print(f"  runs_per_trial: {cfg.tuning.tuning_runs_per_trial}")
     print(f"  truncation_horizon: {cfg.tuning.truncation_horizon}")
+    
+    print("\n--- 評価指標設定 ---")
+    print(f"  error_normalization: {cfg.metric.error_normalization}")
+    if cfg.metric.error_normalization == "offline_solution":
+        print(f"  offline_lambda_l1 探索範囲: [{cfg.search_spaces.offline.offline_lambda_l1.low}, {cfg.search_spaces.offline.offline_lambda_l1.high}]")
     
     print("\n--- 実行設定 ---")
     print(f"  num_trials: {cfg.run.num_trials}")

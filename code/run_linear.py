@@ -31,6 +31,7 @@ from models.pg_batch import ProximalGradientBatchSEM, ProximalGradientConfig
 from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
 from utils.io.plotting import apply_style, plot_heatmaps
 from utils.io.results import backup_script, create_result_dir, make_result_filename, save_json
+from utils.offline_solver import solve_offline_sem_lasso_batch
 
 
 def _fmt(value: object) -> str:
@@ -88,6 +89,15 @@ def print_linear_summary(
     
     flag_items = {name.upper(): "ON" if v else "OFF" for name, v in run_flags.items()}
     _print_block("Run Flags", flag_items)
+    
+    metric_items: Dict[str, object] = {
+        "error_normalization": cfg.metric.error_normalization,
+    }
+    if cfg.metric.error_normalization == "offline_solution":
+        # offline_lambda_l1 はハイパラJSONまたは探索範囲から取得
+        offline_space = cfg.search_spaces.offline.offline_lambda_l1
+        metric_items["offline_lambda_l1 (range)"] = f"[{offline_space.low}, {offline_space.high}]"
+    _print_block("Metric Settings", metric_items)
     
     for method_key, params in hyperparams.items():
         label = f"{method_key.upper()} Hyperparams"
@@ -221,6 +231,29 @@ def main() -> None:
     
     S0_pc = np.zeros((N, N))
     
+    # 評価指標の設定
+    error_normalization = cfg.metric.error_normalization
+    
+    # offline_lambda_l1 の取得（ハイパラJSONから読み込むか、探索範囲の幾何平均を使用）
+    offline_lambda_l1 = None
+    if error_normalization == "offline_solution":
+        if hyperparams.get("offline_lambda_l1") is not None:
+            offline_lambda_l1 = float(hyperparams["offline_lambda_l1"])
+        else:
+            # 探索範囲の幾何平均をデフォルトとして使用（対数スケール）
+            offline_space = cfg.search_spaces.offline.offline_lambda_l1
+            import math
+            offline_lambda_l1 = math.sqrt(offline_space.low * offline_space.high)
+    
+    def compute_error(S_hat: np.ndarray, S_true: np.ndarray, S_offline: Optional[np.ndarray], eps: float = 1e-12) -> float:
+        """誤差を計算（正規化方法に応じて分母を変更）"""
+        numerator = np.linalg.norm(S_hat - S_true) ** 2
+        if error_normalization == "offline_solution" and S_offline is not None:
+            denominator = np.linalg.norm(S_true - S_offline) ** 2 + eps
+        else:
+            denominator = np.linalg.norm(S_true) ** 2 + eps
+        return numerator / denominator
+    
     def run_trial(trial_seed: int):
         rng = np.random.default_rng(trial_seed)
         S_series, T_mat, Z, Y = generate_linear_X_with_exog(
@@ -238,13 +271,19 @@ def main() -> None:
         errors = {}
         estimates_final = {"True": S_series[-1]}
         
+        # オフライン解を計算（必要な場合）
+        S_offline = None
+        if error_normalization == "offline_solution":
+            S_offline = solve_offline_sem_lasso_batch(Y, Z, offline_lambda_l1)
+            estimates_final['Offline'] = S_offline
+        
         if run_pp_flag:
             S0 = np.zeros((N, N))
             b0 = np.ones(N)
             model = PPExogenousSEM(N, S0, b0, r=r, q=q, rho=rho, mu_lambda=mu_lambda)
             S_hat_list, _ = model.run(Y, Z)
             error_pp = [
-                (np.linalg.norm(S_hat_list[t] - S_series[t]) ** 2) / (np.linalg.norm(S_series[t]) ** 2 + 1e-12)
+                compute_error(S_hat_list[t], S_series[t], S_offline)
                 for t in range(T)
             ]
             errors['pp'] = error_pp
@@ -258,7 +297,7 @@ def main() -> None:
             )
             estimates_pc, _ = pc.run(X, Z)
             error_pc = [
-                (np.linalg.norm(estimates_pc[t] - S_series[t]) ** 2) / (np.linalg.norm(S_series[t]) ** 2 + 1e-12)
+                compute_error(estimates_pc[t], S_series[t], S_offline)
                 for t in range(T)
             ]
             errors['pc'] = error_pc
@@ -272,7 +311,7 @@ def main() -> None:
             )
             estimates_co, _ = co.run(X, Z)
             error_co = [
-                (np.linalg.norm(estimates_co[t] - S_series[t]) ** 2) / (np.linalg.norm(S_series[t]) ** 2 + 1e-12)
+                compute_error(estimates_co[t], S_series[t], S_offline)
                 for t in range(T)
             ]
             errors['co'] = error_co
@@ -286,7 +325,7 @@ def main() -> None:
             )
             estimates_sgd, _ = sgd.run(X, Z)
             error_sgd = [
-                (np.linalg.norm(estimates_sgd[t] - S_series[t]) ** 2) / (np.linalg.norm(S_series[t]) ** 2 + 1e-12)
+                compute_error(estimates_sgd[t], S_series[t], S_offline)
                 for t in range(T)
             ]
             errors['sgd'] = error_sgd
@@ -308,7 +347,7 @@ def main() -> None:
             pg_model = ProximalGradientBatchSEM(N, pg_config)
             estimates_pg, _ = pg_model.run(X, Z)
             error_pg = [
-                (np.linalg.norm(estimates_pg[t] - S_series[t]) ** 2) / (np.linalg.norm(S_series[t]) ** 2 + 1e-12)
+                compute_error(estimates_pg[t], S_series[t], S_offline)
                 for t in range(T)
             ]
             errors['pg'] = error_pg
@@ -422,6 +461,10 @@ def main() -> None:
             "trial_seeds": trial_seeds,
             "N": N, "T": T, "sparsity": sparsity,
             "max_weight": max_weight, "std_e": std_e,
+        },
+        "metric": {
+            "error_normalization": error_normalization,
+            "offline_lambda_l1": offline_lambda_l1,
         },
         "methods": {
             "pp": {"enabled": run_pp_flag, "hyperparams": {"r": r, "q": q, "rho": rho, "mu_lambda": mu_lambda}},
