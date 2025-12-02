@@ -1,4 +1,7 @@
 # ホスト名でローカル(Mac)とSSH先(サーバー)を自動判別
+# .env ファイルがあれば読み込む (サーバーごとの設定用)
+-include .env
+
 HOSTNAME := $(shell hostname)
 
 # Mac (ローカル) - uname -s は Darwin を返す
@@ -6,7 +9,8 @@ ifeq ($(findstring darwin,$(shell uname -s | tr A-Z a-z)),darwin)
     PYTHON ?= /Users/fmjp/venv/default/bin/python
 # Linux (SSH先サーバー)
 else
-    PYTHON ?= python
+    # PYTHON変数が未設定の場合、利用可能なPythonを探す (python3 優先)
+    PYTHON ?= $(shell which python3 2>/dev/null || which python 2>/dev/null)
 endif
 LOG_DIR ?= logs
 TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)

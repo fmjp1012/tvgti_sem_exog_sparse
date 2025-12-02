@@ -299,6 +299,7 @@ class SimulationConfig:
 # True: テスト用の軽量設定（プログラム動作確認用、すぐに終わる）
 # False: 本番用設定（実際のシミュレーション用）
 USE_TEST_CONFIG = True
+# USE_TEST_CONFIG = False
 
 # =============================================================================
 # ★★★ 設定を変更するにはここを編集してください ★★★
@@ -310,15 +311,15 @@ CONFIG_MAIN = SimulationConfig(
     # 実行する手法（Trueにした手法のみ実行、コメントアウトで無効化可能）
     methods=MethodFlags(
         pp=True,
-        # pc=True,
-        # co=True,
-        # sgd=True,
+        pc=True,
+        co=True,
+        sgd=True,
         # pg=True,
     ),
     
     # シナリオ共通パラメータ
     common=CommonParams(
-        N=30,
+        N=50,
         T=1000,  # テスト用に短くしています
         sparsity=0.7,
         max_weight=0.5,
@@ -361,29 +362,30 @@ CONFIG_MAIN = SimulationConfig(
         ),
         pc=PCSearchSpace(
             lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True),
-            alpha=SearchRange(low=1e-6, high=1e-1, log=True),
-            beta_pc=SearchRange(low=1e-6, high=1e-1, log=True),
+            alpha=SearchRange(low=1e-6, high=1e+1, log=True),
+            beta_pc=SearchRange(low=1e-6, high=1e+1, log=True),
             gamma=SearchRange(low=0.85, high=0.999, log=False),
-            P=SearchRange(low=0, high=2, log=False, type="int", step=1),
-            C=SearchRange(low=0, high=0, log=False, type="categorical", choices=[1, 2, 5]),
+            P=SearchRange(low=1, high=1, log=False, type="int", step=1),
+            C=SearchRange(low=1, high=1, log=False, type="int", step=1),
         ),
         co=COSearchSpace(
-            alpha=SearchRange(low=1e-6, high=1e-1, log=True),
-            beta_co=SearchRange(low=1e-6, high=1e-1, log=True),
+            alpha=SearchRange(low=1e-6, high=1e+1, log=True),
+            beta_co=SearchRange(low=1e-6, high=1e+1, log=True),
             gamma=SearchRange(low=0.85, high=0.999, log=False),
-            C=SearchRange(low=0, high=0, log=False, type="categorical", choices=[1, 2, 5]),
+            C=SearchRange(low=1, high=1, log=False, type="int", step=1),
         ),
         sgd=SGDSearchSpace(
-            alpha=SearchRange(low=1e-6, high=1e-1, log=True),
-            beta_sgd=SearchRange(low=1e-6, high=1e-1, log=True),
+            alpha=SearchRange(low=1e-6, high=1e+1, log=True),
+            beta_sgd=SearchRange(low=1e-6, high=1e+1, log=True),
         ),
         pg=PGSearchSpace(
-            lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True),
-            step_scale=SearchRange(low=1e-6, high=1e-1, log=True),
-            use_fista=SearchRange(low=0, high=0, log=False, type="categorical", choices=[True, False]),
+            lambda_reg=SearchRange(low=1e-5, high=1e+1, log=True),
+            step_scale=SearchRange(low=1e-6, high=1e+1, log=True),
+            use_fista=SearchRange(low=0, high=0, log=False, type="categorical", choices=[False]),
+            # use_fista=SearchRange(low=0, high=0, log=False, type="categorical", choices=[True, False]),
         ),
         offline=OfflineSearchSpace(
-            offline_lambda_l1=SearchRange(low=1e-4, high=1.0, log=True),
+            offline_lambda_l1=SearchRange(low=1e-4, high=1e+1, log=True),
         ),
     ),
     

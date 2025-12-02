@@ -298,8 +298,8 @@ class SimulationConfig:
 # =============================================================================
 # True: テスト用の軽量設定（プログラム動作確認用、すぐに終わる）
 # False: 本番用設定（実際のシミュレーション用）
-# USE_TEST_CONFIG = True
-USE_TEST_CONFIG = False
+USE_TEST_CONFIG = True
+# USE_TEST_CONFIG = False
 
 # =============================================================================
 # ★★★ 設定を変更するにはここを編集してください ★★★
@@ -319,7 +319,7 @@ CONFIG_MAIN = SimulationConfig(
     
     # シナリオ共通パラメータ
     common=CommonParams(
-        N=30,
+        N=50,
         T=1000,  # テスト用に短くしています
         sparsity=0.7,
         max_weight=0.5,

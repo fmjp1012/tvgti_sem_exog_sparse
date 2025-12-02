@@ -3,6 +3,7 @@ from __future__ import annotations
 import copy
 import datetime as dt
 import json
+import signal
 import threading
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pathlib import Path
@@ -11,6 +12,15 @@ from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 
 import numpy as np
 import optuna
+
+# Ctrl+C で中断するためのグローバルフラグ
+_shutdown_event = threading.Event()
+
+
+def _signal_handler(signum: int, frame: Any) -> None:
+    """SIGINT (Ctrl+C) をキャッチしてシャットダウンフラグをセット"""
+    print("\n[INFO] Ctrl+C detected. Shutting down gracefully...", flush=True)
+    _shutdown_event.set()
 
 from code.config import (
     get_config,
@@ -660,6 +670,10 @@ def tune_methods_for_scenario(
         study = optuna.create_study(direction="minimize")
 
         def wrapped_callback(study: optuna.study.Study, trial: optuna.trial.FrozenTrial) -> None:
+            # シャットダウンフラグをチェック
+            if _shutdown_event.is_set():
+                study.stop()
+                return
             if extra_callback is not None:
                 extra_callback(study, trial)
             progress_queue.put(
@@ -695,30 +709,48 @@ def tune_methods_for_scenario(
     method_specs = {name: all_method_specs[name] for name in selected_methods}
 
     method_results: Dict[str, Dict[str, Any]] = {}
-    with ThreadPoolExecutor(max_workers=len(method_specs)) as executor:
-        future_map = {
-            executor.submit(run_study, name, spec["objective"], spec["callback"]): name for name, spec in method_specs.items()
-        }
-        for future in as_completed(future_map):
-            method_name = future_map[future]
-            try:
-                result_name, result_params, result_value = future.result()
-                method_results[result_name] = {"params": result_params, "best_value": result_value}
-            except Exception as exc:  # pragma: no cover
-                progress_queue.put(
-                    {
-                        "method": method_name,
-                        "status": "completed",
-                        "best_value": None,
-                        "best_params": {},
-                    }
-                )
-                progress_queue.put(None)
-                progress_thread.join()
-                raise exc
+    
+    # シグナルハンドラを設定（Ctrl+C で中断可能にする）
+    _shutdown_event.clear()
+    original_handler = signal.signal(signal.SIGINT, _signal_handler)
+    
+    try:
+        with ThreadPoolExecutor(max_workers=len(method_specs)) as executor:
+            future_map = {
+                executor.submit(run_study, name, spec["objective"], spec["callback"]): name for name, spec in method_specs.items()
+            }
+            for future in as_completed(future_map):
+                # シャットダウンフラグをチェック
+                if _shutdown_event.is_set():
+                    executor.shutdown(wait=False, cancel_futures=True)
+                    break
+                method_name = future_map[future]
+                try:
+                    result_name, result_params, result_value = future.result()
+                    method_results[result_name] = {"params": result_params, "best_value": result_value}
+                except Exception as exc:  # pragma: no cover
+                    progress_queue.put(
+                        {
+                            "method": method_name,
+                            "status": "completed",
+                            "best_value": None,
+                            "best_params": {},
+                        }
+                    )
+                    if not _shutdown_event.is_set():
+                        progress_queue.put(None)
+                        progress_thread.join()
+                        raise exc
+    finally:
+        # シグナルハンドラを復元
+        signal.signal(signal.SIGINT, original_handler)
 
     progress_queue.put(None)
     progress_thread.join()
+    
+    # 中断された場合
+    if _shutdown_event.is_set():
+        print("[INFO] Tuning was interrupted. Returning partial results.", flush=True)
 
     if "pp" in method_results:
         params = method_results["pp"]["params"]
