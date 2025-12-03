@@ -23,6 +23,7 @@ class PPParams:
     q: int = 5
     rho: float = 1e-3
     mu_lambda: float = 0.05
+    lambda_S: float = 0.01  # L1正則化係数（スパース性促進）
 
 
 @dataclass
@@ -142,6 +143,7 @@ def resolve_hyperparams(
         q=int(pp_cfg.get("q", cfg.hyperparams.pp.q)),
         rho=float(pp_cfg.get("rho", cfg.hyperparams.pp.rho)),
         mu_lambda=float(pp_cfg.get("mu_lambda", cfg.hyperparams.pp.mu_lambda)),
+        lambda_S=float(pp_cfg.get("lambda_S", cfg.hyperparams.pp.lambda_S)),
     )
     
     # PC法
@@ -224,6 +226,7 @@ def hyperparams_to_dict(hp: ResolvedHyperparams) -> Dict[str, Dict[str, Any]]:
             "q": hp.pp.q,
             "rho": hp.pp.rho,
             "mu_lambda": hp.pp.mu_lambda,
+            "lambda_S": hp.pp.lambda_S,
         },
         "pc": {
             "lambda_reg": hp.pc.lambda_reg,

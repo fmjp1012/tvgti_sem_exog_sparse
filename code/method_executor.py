@@ -113,6 +113,7 @@ class MethodExecutor:
             q=self.hp.pp.q,
             rho=self.hp.pp.rho,
             mu_lambda=self.hp.pp.mu_lambda,
+            lambda_S=self.hp.pp.lambda_S,
         )
         S_hat_list, _ = model.run(Y, U)
         

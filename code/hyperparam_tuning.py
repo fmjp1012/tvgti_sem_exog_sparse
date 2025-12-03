@@ -148,6 +148,9 @@ SEARCH_OVERRIDE_SPECS: Dict[str, Tuple[str, str, str, Callable[[Any], Any]]] = {
     "pp_mu_lambda_low": ("pp", "mu_lambda", "low", float),
     "pp_mu_lambda_high": ("pp", "mu_lambda", "high", float),
     "pp_mu_lambda_log": ("pp", "mu_lambda", "log", coerce_bool),
+    "pp_lambda_S_low": ("pp", "lambda_S", "low", float),
+    "pp_lambda_S_high": ("pp", "lambda_S", "high", float),
+    "pp_lambda_S_log": ("pp", "lambda_S", "log", coerce_bool),
     "pc_lambda_reg_low": ("pc", "lambda_reg", "low", float),
     "pc_lambda_reg_high": ("pc", "lambda_reg", "high", float),
     "pc_lambda_reg_log": ("pc", "lambda_reg", "log", coerce_bool),
@@ -301,6 +304,9 @@ def tune_methods_for_scenario(
         mu_lambda_suggested = _suggest_from_space(
             trial, "mu_lambda", _resolve_param_space(search_spaces, "pp", "mu_lambda")
         )
+        lambda_S_suggested = _suggest_from_space(
+            trial, "lambda_S", _resolve_param_space(search_spaces, "pp", "lambda_S")
+        )
 
         offline_lambda_l1 = suggest_offline_lambda(trial) if error_normalization == "offline_solution" else None
 
@@ -310,7 +316,11 @@ def tune_methods_for_scenario(
             S_ser, _, U_gen, Y_gen = generator(rng=rng, **generator_kwargs)
             S0 = np.zeros((N, N))
             b0 = np.ones(N)
-            model = PPExogenousSEM(N, S0, b0, r=r_suggested, q=q_suggested, rho=rho_suggested, mu_lambda=mu_lambda_suggested)
+            model = PPExogenousSEM(
+                N, S0, b0,
+                r=r_suggested, q=q_suggested, rho=rho_suggested,
+                mu_lambda=mu_lambda_suggested, lambda_S=lambda_S_suggested
+            )
             S_hat_list, _ = model.run(Y_gen, U_gen)
 
             S_offline = None
@@ -677,6 +687,7 @@ def tune_methods_for_scenario(
         params = method_results["pp"]["params"]
         best["pp"]["rho"] = float(params.get("rho", best["pp"]["rho"]))
         best["pp"]["mu_lambda"] = float(params.get("mu_lambda", best["pp"]["mu_lambda"]))
+        best["pp"]["lambda_S"] = float(params.get("lambda_S", best["pp"].get("lambda_S", default_fallback["pp"]["lambda_S"])))
 
     if "pc" in method_results:
         params = method_results["pc"]["params"]

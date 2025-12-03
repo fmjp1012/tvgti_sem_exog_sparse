@@ -120,3 +120,106 @@ def plot_heatmaps(
         plt.show()
 
     return fig
+
+
+def plot_heatmaps_suite(
+    matrices: Dict[str, np.ndarray],
+    base_save_path: Union[str, Path],
+    title_suffix: str = "",
+    figsize: Tuple[int, int] = (14, 8),
+    cmap: str = "RdBu_r",
+    show: bool = True,
+    use_offline_as_reference: bool = False,
+) -> Dict[str, plt.Figure]:
+    """Plot three types of heatmaps and save them.
+
+    Generates:
+    1. All matrices (estimates + reference)
+    2. Estimates only (without reference)
+    3. Difference from reference
+
+    Parameters
+    ----------
+    matrices : Dict[str, np.ndarray]
+        Dictionary mapping method names to their estimated matrices.
+        Should include 'True' key (or 'Offline' key when use_offline_as_reference=True).
+    base_save_path : Union[str, Path]
+        Base path for saving figures. Suffix will be added before extension.
+        e.g., "result/heatmap.png" -> "result/heatmap_all.png", etc.
+    title_suffix : str
+        Suffix to add to titles (e.g., "at t=49 (last trial)").
+    figsize : Tuple[int, int]
+        Figure size in inches.
+    cmap : str
+        Colormap name.
+    show : bool
+        Whether to display the figures.
+    use_offline_as_reference : bool
+        If True, use 'Offline' as the reference matrix instead of 'True'.
+
+    Returns
+    -------
+    Dict[str, plt.Figure]
+        Dictionary with keys 'all', 'estimates_only', 'diff' mapping to figure objects.
+    """
+    base_path = Path(base_save_path)
+    stem = base_path.stem
+    suffix = base_path.suffix
+    parent = base_path.parent
+
+    # Determine reference key
+    reference_key = "Offline" if use_offline_as_reference else "True"
+    if reference_key not in matrices:
+        raise ValueError(f"Reference key '{reference_key}' not found in matrices. "
+                         f"Available keys: {list(matrices.keys())}")
+    
+    reference_matrix = matrices[reference_key]
+    
+    # Separate estimates and reference
+    estimate_keys = [k for k in matrices.keys() if k not in ("True", "Offline")]
+    estimates_only = {k: matrices[k] for k in estimate_keys}
+    
+    # Compute differences
+    diff_matrices = {
+        f"{k} - {reference_key}": matrices[k] - reference_matrix
+        for k in estimate_keys
+    }
+
+    figures = {}
+
+    # 1. All matrices (including reference)
+    all_path = parent / f"{stem}_all{suffix}"
+    figures["all"] = plot_heatmaps(
+        matrices=matrices,
+        save_path=all_path,
+        title=f"All Estimates vs {reference_key} {title_suffix}".strip(),
+        figsize=figsize,
+        cmap=cmap,
+        show=show,
+    )
+
+    # 2. Estimates only (excluding True/Offline)
+    if estimates_only:
+        estimates_path = parent / f"{stem}_estimates_only{suffix}"
+        figures["estimates_only"] = plot_heatmaps(
+            matrices=estimates_only,
+            save_path=estimates_path,
+            title=f"Estimates Only {title_suffix}".strip(),
+            figsize=figsize,
+            cmap=cmap,
+            show=show,
+        )
+
+    # 3. Difference from reference
+    if diff_matrices:
+        diff_path = parent / f"{stem}_diff{suffix}"
+        figures["diff"] = plot_heatmaps(
+            matrices=diff_matrices,
+            save_path=diff_path,
+            title=f"Difference from {reference_key} {title_suffix}".strip(),
+            figsize=figsize,
+            cmap=cmap,
+            show=show,
+        )
+
+    return figures

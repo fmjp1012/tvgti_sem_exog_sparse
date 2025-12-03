@@ -29,7 +29,7 @@ from code.data_gen import generate_piecewise_X_with_exog
 from models.pp_exog import PPExogenousSEM
 from models.pg_batch import ProximalGradientBatchSEM, ProximalGradientConfig
 from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
-from utils.io.plotting import apply_style, plot_heatmaps
+from utils.io.plotting import apply_style, plot_heatmaps, plot_heatmaps_suite
 from utils.io.results import backup_script, create_result_dir, make_result_filename, save_json
 from utils.offline_solver import solve_offline_sem_lasso_batch
 
@@ -181,6 +181,7 @@ def main() -> None:
     q = int(pp_cfg.get("q", cfg.hyperparams.pp.q))
     rho = float(pp_cfg.get("rho", cfg.hyperparams.pp.rho))
     mu_lambda = float(pp_cfg.get("mu_lambda", cfg.hyperparams.pp.mu_lambda))
+    lambda_S = float(pp_cfg.get("lambda_S", cfg.hyperparams.pp.lambda_S))
     
     # PC法のハイパーパラメータ
     lambda_reg = float(pc_cfg.get("lambda_reg", cfg.hyperparams.pc.lambda_reg))
@@ -218,7 +219,7 @@ def main() -> None:
             "pg": run_pg_flag,
         },
         hyperparams={
-            "pp": {"r": r, "q": q, "rho": rho, "mu_lambda": mu_lambda},
+            "pp": {"r": r, "q": q, "rho": rho, "mu_lambda": mu_lambda, "lambda_S": lambda_S},
             "pc": {"lambda_reg": lambda_reg, "alpha": alpha, "beta": beta, "gamma": gamma, "P": P, "C": C},
             "co": {"lambda_reg": lambda_reg, "alpha": alpha, "beta_co": beta_co, "gamma": gamma, "C": C},
             "sgd": {"lambda_reg": sgd_lambda_reg, "alpha": sgd_alpha, "beta_sgd": beta_sgd, "C": C},
@@ -253,10 +254,11 @@ def main() -> None:
     
     def compute_error(S_hat: np.ndarray, S_true: np.ndarray, S_offline: Optional[np.ndarray], eps: float = 1e-12) -> float:
         """誤差を計算（正規化方法に応じて分母を変更）"""
-        numerator = np.linalg.norm(S_hat - S_true) ** 2
         if error_normalization == "offline_solution" and S_offline is not None:
-            denominator = np.linalg.norm(S_true - S_offline) ** 2 + eps
+            numerator = np.linalg.norm(S_hat - S_offline) ** 2
+            denominator = np.linalg.norm(S_offline) ** 2 + eps
         else:
+            numerator = np.linalg.norm(S_hat - S_true) ** 2
             denominator = np.linalg.norm(S_true) ** 2 + eps
         return numerator / denominator
     
@@ -287,7 +289,7 @@ def main() -> None:
         if run_pp_flag:
             S0 = np.zeros((N, N))
             b0 = np.ones(N)
-            model = PPExogenousSEM(N, S0, b0, r=r, q=q, rho=rho, mu_lambda=mu_lambda)
+            model = PPExogenousSEM(N, S0, b0, r=r, q=q, rho=rho, mu_lambda=mu_lambda, lambda_S=lambda_S)
             S_hat_list, _ = model.run(Y, U)
             error_pp = [
                 compute_error(S_hat_list[t], S_series[t], S_offline)
@@ -409,9 +411,9 @@ def main() -> None:
     plt.xlim(left=0, right=T)
     plt.xlabel('t')
     if error_normalization == "offline_solution":
-        plt.ylabel(r'$||\hat{S} - S^*||_F^2 / ||S^* - S_{\mathrm{offline}}||_F^2$')
+        plt.ylabel(r'Average $\frac{\|\hat{S} - S_{\mathrm{offline}}\|_F^2}{\|S_{\mathrm{offline}}\|_F^2}$')
     else:
-        plt.ylabel(r'$||\hat{S} - S^*||_F^2 / ||S^*||_F^2$')
+        plt.ylabel(r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^*\|_F^2}$')
     plt.grid(True, which='both')
     plt.legend()
     
@@ -421,23 +423,27 @@ def main() -> None:
         params={
             "N": N, "T": T, "num_trials": num_trials,
             "maxweight": max_weight, "stde": std_e, "K": K,
-            "seed": seed, "r": r, "q": q, "rho": rho, "mulambda": mu_lambda,
+            "seed": seed, "r": r, "q": q, "rho": rho, "mulambda": mu_lambda, "lambdaS": lambda_S,
         },
         suffix=".png",
     )
     print(filename)
     result_dir = create_result_dir(cfg.output.result_root, cfg.output.subdir_piecewise, extra_tag='images')
-    plt.savefig(str(Path(result_dir) / filename))
+    plt.tight_layout()
+    plt.savefig(str(Path(result_dir) / filename), bbox_inches='tight')
     plt.show()
     
     # ヒートマップ表示（最後の試行の最終時刻）
+    # 3種類のヒートマップを生成：全体、推定のみ、差分
     if last_estimates is not None:
         heatmap_filename = filename.replace(".png", "_heatmap.png")
-        plot_heatmaps(
+        use_offline_ref = error_normalization == "offline_solution"
+        plot_heatmaps_suite(
             matrices=last_estimates,
-            save_path=Path(result_dir) / heatmap_filename,
-            title=f"Estimated vs True at t={T-1} (last trial)",
+            base_save_path=Path(result_dir) / heatmap_filename,
+            title_suffix=f"at t={T-1} (last trial)",
             show=True,
+            use_offline_as_reference=use_offline_ref,
         )
     
     # メタデータ保存
@@ -477,7 +483,7 @@ def main() -> None:
             "offline_lambda_l1": offline_lambda_l1,
         },
         "methods": {
-            "pp": {"enabled": run_pp_flag, "hyperparams": {"r": r, "q": q, "rho": rho, "mu_lambda": mu_lambda}},
+            "pp": {"enabled": run_pp_flag, "hyperparams": {"r": r, "q": q, "rho": rho, "mu_lambda": mu_lambda, "lambda_S": lambda_S}},
             "pc": {"enabled": run_pc_flag, "hyperparams": {"lambda_reg": lambda_reg, "alpha": alpha, "beta": beta, "gamma": gamma, "P": P, "C": C}},
             "co": {"enabled": run_co_flag, "hyperparams": {"lambda_reg": lambda_reg, "alpha": alpha, "beta_co": beta_co, "gamma": gamma, "C": C}},
             "sgd": {"enabled": run_sgd_flag, "hyperparams": {"lambda_reg": lambda_reg, "alpha": alpha, "beta_sgd": beta_sgd, "C": C}},

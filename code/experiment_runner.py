@@ -478,6 +478,7 @@ class BaseExperimentRunner(ABC):
             "q": self.hyperparams.pp.q,
             "rho": self.hyperparams.pp.rho,
             "mulambda": self.hyperparams.pp.mu_lambda,
+            "lambdaS": self.hyperparams.pp.lambda_S,
             **self.get_scenario_params(),
         }
         filename = make_result_filename(

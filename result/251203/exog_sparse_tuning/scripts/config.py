@@ -102,6 +102,7 @@ class PPSearchSpace:
     """PP法の探索範囲"""
     rho: SearchRange = field(default_factory=lambda: SearchRange(low=1e-6, high=1e-1, log=True))
     mu_lambda: SearchRange = field(default_factory=lambda: SearchRange(low=1e-4, high=1.0, log=True))
+    lambda_S: SearchRange = field(default_factory=lambda: SearchRange(low=1e-6, high=1e-1, log=True))
 
 
 @dataclass
@@ -166,6 +167,7 @@ class PPHyperparams:
     q: int = 5
     rho: float = 1e-3
     mu_lambda: float = 0.05
+    lambda_S: float = 0.01  # L1正則化係数（スパース性促進）
 
 
 @dataclass
@@ -298,8 +300,8 @@ class SimulationConfig:
 # =============================================================================
 # True: テスト用の軽量設定（プログラム動作確認用、すぐに終わる）
 # False: 本番用設定（実際のシミュレーション用）
-# USE_TEST_CONFIG = True
-USE_TEST_CONFIG = False
+USE_TEST_CONFIG = True
+# USE_TEST_CONFIG = False
 
 # =============================================================================
 # ★★★ 設定を変更するにはここを編集してください ★★★
@@ -320,7 +322,7 @@ CONFIG_MAIN = SimulationConfig(
     # シナリオ共通パラメータ
     common=CommonParams(
         N=50,
-        T=1000,  # テスト用に短くしています
+        T=1000,  # テスト用に短くしています -> 本番パラメータ
         sparsity=0.7,
         max_weight=0.5,
         std_e=0.05,
@@ -359,6 +361,7 @@ CONFIG_MAIN = SimulationConfig(
         pp=PPSearchSpace(
             rho=SearchRange(low=1e-6, high=1e-1, log=True),
             mu_lambda=SearchRange(low=1e-4, high=1.0, log=True),
+            lambda_S=SearchRange(low=1e-6, high=1e-1, log=True),
         ),
         pc=PCSearchSpace(
             lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True),
@@ -398,8 +401,8 @@ CONFIG_MAIN = SimulationConfig(
     # "true_value": 真の値のノルムで割る（従来の方法）
     # "offline_solution": オフライン解のノルムで割る（offline_lambda_l1はOptunaで自動探索）
     metric=MetricParams(
-        error_normalization="true_value",
-        # error_normalization="offline_solution",
+        # error_normalization="true_value",
+        error_normalization="offline_solution",
     ),
     
     # 出力設定
@@ -462,6 +465,7 @@ CONFIG_TEST = SimulationConfig(
         pp=PPSearchSpace(
             rho=SearchRange(low=1e-6, high=1e-1, log=True),
             mu_lambda=SearchRange(low=1e-4, high=1.0, log=True),
+            lambda_S=SearchRange(low=1e-6, high=1e-1, log=True),
         ),
         pc=PCSearchSpace(
             lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True),
@@ -498,7 +502,8 @@ CONFIG_TEST = SimulationConfig(
     
     # 評価指標設定
     metric=MetricParams(
-        error_normalization="true_value",  # テストではシンプルな方法で
+        # error_normalization="true_value",  # テストではシンプルな方法で
+        error_normalization="offline_solution",
     ),
     
     # 出力設定
@@ -565,6 +570,7 @@ def get_search_spaces_dict() -> Dict[str, Dict[str, Dict[str, Any]]]:
         "pp": {
             "rho": search_range_to_dict(cfg.search_spaces.pp.rho),
             "mu_lambda": search_range_to_dict(cfg.search_spaces.pp.mu_lambda),
+            "lambda_S": search_range_to_dict(cfg.search_spaces.pp.lambda_S),
         },
         "pc": {
             "lambda_reg": search_range_to_dict(cfg.search_spaces.pc.lambda_reg),
@@ -604,6 +610,7 @@ def get_default_hyperparams_dict() -> Dict[str, Dict[str, Any]]:
             "q": cfg.hyperparams.pp.q,
             "rho": cfg.hyperparams.pp.rho,
             "mu_lambda": cfg.hyperparams.pp.mu_lambda,
+            "lambda_S": cfg.hyperparams.pp.lambda_S,
         },
         "pc": {
             "lambda_reg": cfg.hyperparams.pc.lambda_reg,

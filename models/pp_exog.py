@@ -360,13 +360,12 @@ class PPExogenousSEM:
     互換レイヤー。古い PPExogenousSEM API を APSPExogenousSEM に委譲する。
 
     期待される使用方法（hyperparam_tuning.py より）:
-        model = PPExogenousSEM(N, S0, b0, r, q, rho, mu_lambda)
+        model = PPExogenousSEM(N, S0, b0, r, q, rho, mu_lambda, lambda_S)
         S_list, _ = model.run(X, Z)
 
-    注意: APSP 実装では ℓ1 近接に lambda_S, eta が必要だが、
-    チューニング対象外のためここではデフォルト値を用いる。
-      - lambda_S = 0.0 (ソフトしきい値で縮まない)
-      - eta = 1.0
+    パラメータ:
+      - lambda_S: L1正則化係数（スパース性促進）。デフォルト0.0で無効。
+      - eta: 近接写像のステップサイズ。デフォルト1.0固定。
     """
 
     def __init__(
@@ -379,14 +378,14 @@ class PPExogenousSEM:
         q: int,
         rho: float,
         mu_lambda: float,
+        lambda_S: float = 0.0,
     ) -> None:
         if b_init.ndim == 1:
             T_init = np.diag(b_init)
         else:
             T_init = b_init
 
-        # 互換目的のデフォルト
-        lambda_S = 0.0
+        # eta は 1.0 固定（lambda_S のみでスパース性を制御）
         eta = 1.0
 
         self._apsp = APSPExogenousSEM(
