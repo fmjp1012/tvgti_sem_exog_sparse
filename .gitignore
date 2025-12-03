@@ -3,6 +3,7 @@
 matrix_cache/
 .DS_Store
 thesis/
+*.pid
 
 # Byte-compiled / optimized / DLL files
 __pycache__/

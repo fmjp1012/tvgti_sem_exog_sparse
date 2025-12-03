@@ -1,0 +1,259 @@
+{
+  "created_at": "2025-12-02T19:14:58.157766",
+  "command": [
+    "/home/ito/tvgti_sem_exog_sparse/code/tune_and_run.py",
+    "piecewise"
+  ],
+  "scenario": "piecewise",
+  "config": {
+    "common": {
+      "N": 50,
+      "T": 1000,
+      "sparsity": 0.7,
+      "max_weight": 0.5,
+      "std_e": 0.05,
+      "seed": 3
+    },
+    "tuning": {
+      "tuning_trials": 300,
+      "tuning_runs_per_trial": 1,
+      "truncation_horizon": 400
+    },
+    "enabled_methods": [
+      "pp",
+      "pc",
+      "co",
+      "sgd"
+    ],
+    "piecewise": {
+      "K": 4
+    }
+  },
+  "tuning_summary": {
+    "seed": 4,
+    "tuning_trials": 300,
+    "tuning_runs_per_trial": 1,
+    "truncation_horizon": 400,
+    "generator_kwargs": {
+      "N": 50,
+      "T": 1000,
+      "sparsity": 0.7,
+      "max_weight": 0.5,
+      "std_e": 0.05,
+      "K": 4,
+      "s_type": "random",
+      "t_min": 0.5,
+      "t_max": 1.0,
+      "z_dist": "uniform01"
+    },
+    "metric": {
+      "error_normalization": "offline_solution",
+      "offline_lambda_l1": 0.0001014457711690573
+    },
+    "initial_fallback": {
+      "pp": {
+        "r": 50,
+        "q": 5,
+        "rho": 0.001,
+        "mu_lambda": 0.05
+      },
+      "pc": {
+        "lambda_reg": 0.001,
+        "alpha": 0.01,
+        "beta": 0.01,
+        "gamma": 0.9,
+        "P": 1,
+        "C": 1
+      },
+      "co": {
+        "beta_co": 0.02
+      },
+      "sgd": {
+        "beta_sgd": 0.0269
+      },
+      "pg": {
+        "lambda_reg": 0.001,
+        "step_scale": 1.0,
+        "step_size": null,
+        "use_fista": true,
+        "use_backtracking": false,
+        "max_iter": 500,
+        "tol": 0.0001
+      }
+    },
+    "search_spaces": {
+      "pp": {
+        "rho": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 0.1,
+          "log": true
+        },
+        "mu_lambda": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 1.0,
+          "log": true
+        }
+      },
+      "pc": {
+        "lambda_reg": {
+          "type": "float",
+          "low": 1e-05,
+          "high": 0.01,
+          "log": true
+        },
+        "alpha": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 10.0,
+          "log": true
+        },
+        "beta_pc": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 10.0,
+          "log": true
+        },
+        "gamma": {
+          "type": "float",
+          "low": 0.85,
+          "high": 0.999,
+          "log": false
+        },
+        "P": {
+          "type": "int",
+          "low": 1,
+          "high": 1,
+          "log": false,
+          "step": 1
+        },
+        "C": {
+          "type": "int",
+          "low": 1,
+          "high": 1,
+          "log": false,
+          "step": 1
+        }
+      },
+      "co": {
+        "alpha": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 10.0,
+          "log": true
+        },
+        "beta_co": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 10.0,
+          "log": true
+        },
+        "gamma": {
+          "type": "float",
+          "low": 0.85,
+          "high": 0.999,
+          "log": false
+        },
+        "C": {
+          "type": "int",
+          "low": 1,
+          "high": 1,
+          "log": false,
+          "step": 1
+        }
+      },
+      "sgd": {
+        "alpha": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 10.0,
+          "log": true
+        },
+        "beta_sgd": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 10.0,
+          "log": true
+        }
+      },
+      "pg": {
+        "lambda_reg": {
+          "type": "float",
+          "low": 1e-05,
+          "high": 10.0,
+          "log": true
+        },
+        "step_scale": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 10.0,
+          "log": true
+        },
+        "use_fista": {
+          "type": "categorical",
+          "choices": [
+            false
+          ]
+        }
+      },
+      "offline": {
+        "offline_lambda_l1": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 10.0,
+          "log": true
+        }
+      }
+    },
+    "search_overrides": {},
+    "method_results": {
+      "sgd": {
+        "best_params": {
+          "alpha": 1.2106160360990295,
+          "beta_sgd": 0.00033392657929790334,
+          "offline_lambda_l1": 0.00013974925715746944
+        },
+        "best_value": 0.6578309441125276
+      },
+      "co": {
+        "best_params": {
+          "alpha": 1.8882549649801788,
+          "beta_co": 0.06744909328057251,
+          "gamma": 0.8871785669787341,
+          "C": 1,
+          "offline_lambda_l1": 0.00010015286115343502
+        },
+        "best_value": 0.6966648449128968
+      },
+      "pc": {
+        "best_params": {
+          "lambda_reg": 3.912590926438488e-05,
+          "alpha": 1.4890373105321582,
+          "beta_pc": 1.0019219966287393e-06,
+          "gamma": 0.8918953467734176,
+          "P": 1,
+          "C": 1,
+          "offline_lambda_l1": 0.0001014457711690573
+        },
+        "best_value": 0.6561915561026131
+      },
+      "pp": {
+        "best_params": {
+          "rho": 1.3342944985179196e-05,
+          "mu_lambda": 0.8245774722039119,
+          "offline_lambda_l1": 0.000398001269278947
+        },
+        "best_value": 0.4696231589655787
+      }
+    },
+    "generator_name": "code.data_gen.generate_piecewise_X_with_exog"
+  },
+  "snapshots": {
+    "hyperparam_tuning": "result/251202/exog_sparse_tuning/scripts/hyperparam_tuning.py",
+    "tune_and_run": "result/251202/exog_sparse_tuning/scripts/tune_and_run.py",
+    "data_gen": "result/251202/exog_sparse_tuning/scripts/data_gen.py",
+    "config": "result/251202/exog_sparse_tuning/scripts/config.py"
+  },
+  "hyperparam_file": "result/251202/exog_sparse_tuning/piecewise_best_hyperparams_20251202_191458.json"
+}

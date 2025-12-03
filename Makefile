@@ -9,8 +9,15 @@ ifeq ($(findstring darwin,$(shell uname -s | tr A-Z a-z)),darwin)
     PYTHON ?= /Users/fmjp/venv/default/bin/python
 # Linux (SSH先サーバー)
 else
-    # PYTHON変数が未設定の場合、利用可能なPythonを探す (python3 優先)
-    PYTHON ?= $(shell which python3 2>/dev/null || which python 2>/dev/null)
+    # pyenvのshimがあれば優先的に使用 (python3を優先)
+    ifneq ($(wildcard $(HOME)/.pyenv/shims/python3),)
+        PYTHON ?= $(HOME)/.pyenv/shims/python3
+    else ifneq ($(wildcard $(HOME)/.pyenv/shims/python),)
+        PYTHON ?= $(HOME)/.pyenv/shims/python
+    else
+        # PYTHON変数が未設定の場合、利用可能なPythonを探す (python3 優先)
+        PYTHON ?= $(shell which python3 2>/dev/null || which python 2>/dev/null)
+    endif
 endif
 LOG_DIR ?= logs
 TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
