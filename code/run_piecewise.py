@@ -404,7 +404,10 @@ def main() -> None:
     plt.yscale('log')
     plt.xlim(left=0, right=T)
     plt.xlabel('t')
-    plt.ylabel('Average NSE')
+    if error_normalization == "offline_solution":
+        plt.ylabel('Average Error Ratio (vs Offline)')
+    else:
+        plt.ylabel('Average NSE')
     plt.grid(True, which='both')
     plt.legend()
     
