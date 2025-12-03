@@ -300,8 +300,8 @@ class SimulationConfig:
 # =============================================================================
 # True: テスト用の軽量設定（プログラム動作確認用、すぐに終わる）
 # False: 本番用設定（実際のシミュレーション用）
-USE_TEST_CONFIG = True
-# USE_TEST_CONFIG = False
+# USE_TEST_CONFIG = True
+USE_TEST_CONFIG = False
 
 # =============================================================================
 # ★★★ 設定を変更するにはここを編集してください ★★★
@@ -321,7 +321,7 @@ CONFIG_MAIN = SimulationConfig(
     
     # シナリオ共通パラメータ
     common=CommonParams(
-        N=50,
+        N=20,
         T=1000,  # テスト用に短くしています -> 本番パラメータ
         sparsity=0.7,
         max_weight=0.5,
@@ -401,8 +401,8 @@ CONFIG_MAIN = SimulationConfig(
     # "true_value": 真の値のノルムで割る（従来の方法）
     # "offline_solution": オフライン解のノルムで割る（offline_lambda_l1はOptunaで自動探索）
     metric=MetricParams(
-        # error_normalization="true_value",
-        error_normalization="offline_solution",
+        error_normalization="true_value",
+        # error_normalization="offline_solution",
     ),
     
     # 出力設定
