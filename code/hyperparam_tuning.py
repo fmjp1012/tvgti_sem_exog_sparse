@@ -1,3 +1,9 @@
+"""
+ハイパーパラメータチューニングモジュール
+
+Optuna を使用した各手法のハイパーパラメータ最適化を提供します。
+"""
+
 from __future__ import annotations
 
 import copy
@@ -13,6 +19,25 @@ from typing import Any, Callable, Dict, Iterable, Optional, Tuple
 import numpy as np
 import optuna
 
+from code.config import (
+    get_config,
+    get_default_hyperparams_dict,
+    get_enabled_methods,
+    get_search_spaces_dict,
+)
+from code.data_gen import (
+    generate_linear_X_with_exog,
+    generate_piecewise_X_with_exog,
+)
+from models.pg_batch import ProximalGradientBatchSEM, ProximalGradientConfig
+from models.pp_exog import PPExogenousSEM
+from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
+from numpy.random import Generator, SeedSequence
+from utils.formatting import clean_dict, coerce_bool, to_list_of_bools, to_list_of_ints, to_python_value
+from utils.io.results import backup_script, create_result_dir, save_json
+from utils.metrics import compute_frobenius_error
+from utils.offline_solver import solve_offline_sem_lasso_batch
+
 # Ctrl+C で中断するためのグローバルフラグ
 _shutdown_event = threading.Event()
 
@@ -22,71 +47,6 @@ def _signal_handler(signum: int, frame: Any) -> None:
     print("\n[INFO] Ctrl+C detected. Shutting down gracefully...", flush=True)
     _shutdown_event.set()
 
-from code.config import (
-    get_config,
-    get_search_spaces_dict,
-    get_default_hyperparams_dict,
-    get_enabled_methods,
-)
-from code.data_gen import (
-    generate_linear_X_with_exog,
-    generate_piecewise_X_with_exog,
-)
-from models.pp_exog import PPExogenousSEM
-from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
-from models.pg_batch import ProximalGradientBatchSEM, ProximalGradientConfig
-from utils.io.results import create_result_dir, backup_script, save_json
-from utils.offline_solver import solve_offline_sem_lasso_batch
-from numpy.random import SeedSequence, Generator
-
-
-def _to_bool(value: Any) -> bool:
-    if isinstance(value, bool):
-        return value
-    if isinstance(value, (int, np.integer)):
-        return bool(int(value))
-    if isinstance(value, str):
-        return value.strip().lower() in {"1", "true", "yes", "on"}
-    return bool(value)
-
-
-def _to_list_of_ints(value: Any) -> list[int]:
-    if isinstance(value, str):
-        parts = [part.strip() for part in value.split(",") if part.strip()]
-        return [int(part) for part in parts]
-    if isinstance(value, (list, tuple)):
-        return [int(v) for v in value]
-    return [int(value)]
-
-
-def _to_list_of_bools(value: Any) -> list[bool]:
-    if isinstance(value, str):
-        parts = [part.strip() for part in value.split(",") if part.strip()]
-        return [_to_bool(part) for part in parts]
-    if isinstance(value, (list, tuple)):
-        return [_to_bool(v) for v in value]
-    return [_to_bool(value)]
-
-
-def _to_python_value(value: Any) -> Any:
-    if isinstance(value, (np.floating, float)):
-        return float(value)
-    if isinstance(value, (np.integer, np.int_)):
-        return int(value)
-    return value
-
-
-def _clean(obj: Any) -> Any:
-    if isinstance(obj, dict):
-        return {key: _clean(val) for key, val in obj.items()}
-    if isinstance(obj, (list, tuple)):
-        return [_clean(val) for val in obj]
-    return _to_python_value(obj)
-
-
-def _clean_dict(data: Dict[str, Any]) -> Dict[str, Any]:
-    return {key: _clean(val) for key, val in data.items()}
-
 
 SUPPORTED_METHODS: Tuple[str, ...] = ("pp", "pc", "co", "sgd", "pg")
 
@@ -95,12 +55,9 @@ def _normalize_methods(methods: Optional[Iterable[Any]]) -> list[str]:
     """
     手法リストを正規化する。
     常に config.py で有効化されている手法のみを返す。
-    methods が None の場合は config.py のフラグをそのまま使用。
-    methods が指定された場合でも config.py のフラグでフィルタリングする。
     """
-    # config.py で有効化されている手法を取得
     enabled_in_config = get_enabled_methods()
-    
+
     if methods is None:
         result = enabled_in_config
     else:
@@ -130,8 +87,7 @@ def _normalize_methods(methods: Optional[Iterable[Any]]) -> list[str]:
             raise ValueError(
                 f"未知の手法指定です: {', '.join(invalid)}. 利用可能: {', '.join(SUPPORTED_METHODS)}"
             )
-        
-        # config.py のフラグでフィルタリング
+
         result = [m for m in deduped if m in enabled_in_config]
 
     if not result:
@@ -143,77 +99,15 @@ def _normalize_methods(methods: Optional[Iterable[Any]]) -> list[str]:
     return result
 
 
-def _get_default_hyperparam_fallback() -> Dict[str, Dict[str, Any]]:
-    """config.py からデフォルトハイパーパラメータを取得"""
-    return get_default_hyperparams_dict()
-
-
-def _get_default_search_spaces() -> Dict[str, Dict[str, Dict[str, Any]]]:
-    """config.py から探索範囲を取得"""
-    return get_search_spaces_dict()
-
-
-# 後方互換性のためのエイリアス（他モジュールが直接参照している場合）
-DEFAULT_HYPERPARAM_FALLBACK: Dict[str, Dict[str, Any]] = _get_default_hyperparam_fallback()
-DEFAULT_SEARCH_SPACES: Dict[str, Dict[str, Dict[str, Any]]] = _get_default_search_spaces()
-
-SEARCH_OVERRIDE_SPECS: Dict[str, Tuple[str, str, str, Callable[[Any], Any]]] = {
-    "pp_rho_low": ("pp", "rho", "low", float),
-    "pp_rho_high": ("pp", "rho", "high", float),
-    "pp_rho_log": ("pp", "rho", "log", _to_bool),
-    "pp_mu_lambda_low": ("pp", "mu_lambda", "low", float),
-    "pp_mu_lambda_high": ("pp", "mu_lambda", "high", float),
-    "pp_mu_lambda_log": ("pp", "mu_lambda", "log", _to_bool),
-    "pc_lambda_reg_low": ("pc", "lambda_reg", "low", float),
-    "pc_lambda_reg_high": ("pc", "lambda_reg", "high", float),
-    "pc_lambda_reg_log": ("pc", "lambda_reg", "log", _to_bool),
-    "pc_alpha_low": ("pc", "alpha", "low", float),
-    "pc_alpha_high": ("pc", "alpha", "high", float),
-    "pc_alpha_log": ("pc", "alpha", "log", _to_bool),
-    "pc_beta_pc_low": ("pc", "beta_pc", "low", float),
-    "pc_beta_pc_high": ("pc", "beta_pc", "high", float),
-    "pc_beta_pc_log": ("pc", "beta_pc", "log", _to_bool),
-    "pc_gamma_low": ("pc", "gamma", "low", float),
-    "pc_gamma_high": ("pc", "gamma", "high", float),
-    "pc_gamma_log": ("pc", "gamma", "log", _to_bool),
-    "pc_P_min": ("pc", "P", "low", int),
-    "pc_P_max": ("pc", "P", "high", int),
-    "pc_P_step": ("pc", "P", "step", int),
-    "pc_C_choices": ("pc", "C", "choices", _to_list_of_ints),
-    "co_alpha_low": ("co", "alpha", "low", float),
-    "co_alpha_high": ("co", "alpha", "high", float),
-    "co_alpha_log": ("co", "alpha", "log", _to_bool),
-    "co_beta_co_low": ("co", "beta_co", "low", float),
-    "co_beta_co_high": ("co", "beta_co", "high", float),
-    "co_beta_co_log": ("co", "beta_co", "log", _to_bool),
-    "co_gamma_low": ("co", "gamma", "low", float),
-    "co_gamma_high": ("co", "gamma", "high", float),
-    "co_gamma_log": ("co", "gamma", "log", _to_bool),
-    "co_C_choices": ("co", "C", "choices", _to_list_of_ints),
-    "sgd_alpha_low": ("sgd", "alpha", "low", float),
-    "sgd_alpha_high": ("sgd", "alpha", "high", float),
-    "sgd_alpha_log": ("sgd", "alpha", "log", _to_bool),
-    "sgd_beta_sgd_low": ("sgd", "beta_sgd", "low", float),
-    "sgd_beta_sgd_high": ("sgd", "beta_sgd", "high", float),
-    "sgd_beta_sgd_log": ("sgd", "beta_sgd", "log", _to_bool),
-    "pg_lambda_reg_low": ("pg", "lambda_reg", "low", float),
-    "pg_lambda_reg_high": ("pg", "lambda_reg", "high", float),
-    "pg_lambda_reg_log": ("pg", "lambda_reg", "log", _to_bool),
-    "pg_step_scale_low": ("pg", "step_scale", "low", float),
-    "pg_step_scale_high": ("pg", "step_scale", "high", float),
-    "pg_step_scale_log": ("pg", "step_scale", "log", _to_bool),
-    "pg_use_fista_choices": ("pg", "use_fista", "choices", _to_list_of_bools),
-}
-
-
 def _resolve_param_space(
     search_spaces: Dict[str, Dict[str, Dict[str, Any]]], method: str, param: str
 ) -> Dict[str, Any]:
-    """Return a merged copy of the search spec for the given method/param."""
+    """指定されたmethod/paramの探索空間を返す。"""
+    default_spaces = get_search_spaces_dict()
     method_space = search_spaces.get(method, {})
     if param in method_space:
         return dict(method_space[param])
-    default_space = DEFAULT_SEARCH_SPACES.get(method, {}).get(param)
+    default_space = default_spaces.get(method, {}).get(param)
     if default_space is not None:
         return dict(default_space)
     raise KeyError(f"{method}.{param} の探索空間が定義されていません。")
@@ -222,7 +116,7 @@ def _resolve_param_space(
 def _suggest_from_space(
     trial: optuna.trial.Trial, name: str, spec: Dict[str, Any]
 ) -> Any:
-    """Suggest a value from Optuna trial using the provided search spec."""
+    """Optunaのtrialから探索空間に基づいて値を提案する。"""
     param_type = spec.get("type")
     if param_type == "float":
         return trial.suggest_float(
@@ -246,6 +140,56 @@ def _suggest_from_space(
     raise ValueError(f"{name} の探索空間 type={param_type} は未サポートです。")
 
 
+# 探索範囲オーバーライド仕様
+SEARCH_OVERRIDE_SPECS: Dict[str, Tuple[str, str, str, Callable[[Any], Any]]] = {
+    "pp_rho_low": ("pp", "rho", "low", float),
+    "pp_rho_high": ("pp", "rho", "high", float),
+    "pp_rho_log": ("pp", "rho", "log", coerce_bool),
+    "pp_mu_lambda_low": ("pp", "mu_lambda", "low", float),
+    "pp_mu_lambda_high": ("pp", "mu_lambda", "high", float),
+    "pp_mu_lambda_log": ("pp", "mu_lambda", "log", coerce_bool),
+    "pc_lambda_reg_low": ("pc", "lambda_reg", "low", float),
+    "pc_lambda_reg_high": ("pc", "lambda_reg", "high", float),
+    "pc_lambda_reg_log": ("pc", "lambda_reg", "log", coerce_bool),
+    "pc_alpha_low": ("pc", "alpha", "low", float),
+    "pc_alpha_high": ("pc", "alpha", "high", float),
+    "pc_alpha_log": ("pc", "alpha", "log", coerce_bool),
+    "pc_beta_pc_low": ("pc", "beta_pc", "low", float),
+    "pc_beta_pc_high": ("pc", "beta_pc", "high", float),
+    "pc_beta_pc_log": ("pc", "beta_pc", "log", coerce_bool),
+    "pc_gamma_low": ("pc", "gamma", "low", float),
+    "pc_gamma_high": ("pc", "gamma", "high", float),
+    "pc_gamma_log": ("pc", "gamma", "log", coerce_bool),
+    "pc_P_min": ("pc", "P", "low", int),
+    "pc_P_max": ("pc", "P", "high", int),
+    "pc_P_step": ("pc", "P", "step", int),
+    "pc_C_choices": ("pc", "C", "choices", to_list_of_ints),
+    "co_alpha_low": ("co", "alpha", "low", float),
+    "co_alpha_high": ("co", "alpha", "high", float),
+    "co_alpha_log": ("co", "alpha", "log", coerce_bool),
+    "co_beta_co_low": ("co", "beta_co", "low", float),
+    "co_beta_co_high": ("co", "beta_co", "high", float),
+    "co_beta_co_log": ("co", "beta_co", "log", coerce_bool),
+    "co_gamma_low": ("co", "gamma", "low", float),
+    "co_gamma_high": ("co", "gamma", "high", float),
+    "co_gamma_log": ("co", "gamma", "log", coerce_bool),
+    "co_C_choices": ("co", "C", "choices", to_list_of_ints),
+    "sgd_alpha_low": ("sgd", "alpha", "low", float),
+    "sgd_alpha_high": ("sgd", "alpha", "high", float),
+    "sgd_alpha_log": ("sgd", "alpha", "log", coerce_bool),
+    "sgd_beta_sgd_low": ("sgd", "beta_sgd", "low", float),
+    "sgd_beta_sgd_high": ("sgd", "beta_sgd", "high", float),
+    "sgd_beta_sgd_log": ("sgd", "beta_sgd", "log", coerce_bool),
+    "pg_lambda_reg_low": ("pg", "lambda_reg", "low", float),
+    "pg_lambda_reg_high": ("pg", "lambda_reg", "high", float),
+    "pg_lambda_reg_log": ("pg", "lambda_reg", "log", coerce_bool),
+    "pg_step_scale_low": ("pg", "step_scale", "low", float),
+    "pg_step_scale_high": ("pg", "step_scale", "high", float),
+    "pg_step_scale_log": ("pg", "step_scale", "log", coerce_bool),
+    "pg_use_fista_choices": ("pg", "use_fista", "choices", to_list_of_bools),
+}
+
+
 def tune_methods_for_scenario(
     generator: Callable[..., Any],
     generator_kwargs: Dict[str, Any],
@@ -262,7 +206,6 @@ def tune_methods_for_scenario(
     if "N" not in generator_kwargs or "T" not in generator_kwargs:
         raise ValueError("generator_kwargs には少なくとも 'N' と 'T' を含める必要があります")
 
-    # config.py から設定を取得（引数で上書き可能）
     cfg = get_config()
     if tuning_trials is None:
         tuning_trials = cfg.tuning.tuning_trials
@@ -275,9 +218,10 @@ def tune_methods_for_scenario(
 
     selected_methods = _normalize_methods(methods)
 
-    best = copy.deepcopy(fallback or _get_default_hyperparam_fallback())
+    default_fallback = get_default_hyperparams_dict()
+    best = copy.deepcopy(fallback or default_fallback)
     initial_best = copy.deepcopy(best)
-    search_spaces = copy.deepcopy(_get_default_search_spaces())
+    search_spaces = copy.deepcopy(get_search_spaces_dict())
     if search_space_overrides:
         for method, params in search_space_overrides.items():
             method_space = search_spaces.setdefault(method, {})
@@ -290,42 +234,26 @@ def tune_methods_for_scenario(
     T_tune = min(T, truncation_horizon)
     penalty_value = 1e6
     method_ids = {"pp": 0, "pc": 1, "co": 2, "sgd": 3, "pg": 4}
-    
-    # 評価指標の設定を取得
+
     error_normalization = cfg.metric.error_normalization
-    # offline_lambda_l1 は Optuna で探索する（error_normalization == "offline_solution" の場合）
 
     def make_rng(method: str, trial_number: int, run_index: int) -> Generator:
         entropy = [seed, method_ids[method], trial_number, run_index]
         return np.random.default_rng(SeedSequence(entropy))
-    
-    def compute_error_for_tuning(
-        S_hat: np.ndarray, 
-        S_true: np.ndarray, 
-        S_offline: Optional[np.ndarray], 
-        eps: float = 1e-12
-    ) -> float:
-        """チューニング用の誤差計算（正規化方法に応じて分母を変更）"""
-        err = np.linalg.norm(S_hat - S_true, ord="fro")
-        if error_normalization == "offline_solution" and S_offline is not None:
-            normalizer = np.linalg.norm(S_true - S_offline, ord="fro") + eps
-            return err / normalizer
-        return err
-    
+
     def suggest_offline_lambda(trial: optuna.trial.Trial) -> float:
-        """オフライン解のL1正則化パラメータを探索"""
         offline_space = _resolve_param_space(search_spaces, "offline", "offline_lambda_l1")
         return _suggest_from_space(trial, "offline_lambda_l1", offline_space)
 
     progress_queue: Queue[Dict[str, Any]] = Queue()
     pc_params_lock = threading.Lock()
     pc_shared_params: Dict[str, float | int] = {
-        "lambda_reg": float(best["pc"].get("lambda_reg", DEFAULT_HYPERPARAM_FALLBACK["pc"]["lambda_reg"])),
-        "alpha": float(best["pc"].get("alpha", DEFAULT_HYPERPARAM_FALLBACK["pc"]["alpha"])),
-        "beta": float(best["pc"].get("beta", DEFAULT_HYPERPARAM_FALLBACK["pc"]["beta"])),
-        "gamma": float(best["pc"].get("gamma", DEFAULT_HYPERPARAM_FALLBACK["pc"]["gamma"])),
-        "P": int(best["pc"].get("P", DEFAULT_HYPERPARAM_FALLBACK["pc"]["P"])),
-        "C": int(best["pc"].get("C", DEFAULT_HYPERPARAM_FALLBACK["pc"]["C"])),
+        "lambda_reg": float(best["pc"].get("lambda_reg", default_fallback["pc"]["lambda_reg"])),
+        "alpha": float(best["pc"].get("alpha", default_fallback["pc"]["alpha"])),
+        "beta": float(best["pc"].get("beta", default_fallback["pc"]["beta"])),
+        "gamma": float(best["pc"].get("gamma", default_fallback["pc"]["gamma"])),
+        "P": int(best["pc"].get("P", default_fallback["pc"]["P"])),
+        "C": int(best["pc"].get("C", default_fallback["pc"]["C"])),
     }
 
     def progress_worker() -> None:
@@ -359,17 +287,23 @@ def tune_methods_for_scenario(
         with pc_params_lock:
             return dict(pc_shared_params)
 
+    def _compute_error_for_tuning(
+        S_hat: np.ndarray,
+        S_true: np.ndarray,
+        S_offline: Optional[np.ndarray],
+    ) -> float:
+        return compute_frobenius_error(S_hat, S_true, S_offline, error_normalization)
+
     def objective_pp(trial: optuna.trial.Trial) -> float:
-        r_suggested = int(best["pp"].get("r", DEFAULT_HYPERPARAM_FALLBACK["pp"]["r"]))
-        q_suggested = int(best["pp"].get("q", DEFAULT_HYPERPARAM_FALLBACK["pp"]["q"]))
+        r_suggested = int(best["pp"].get("r", default_fallback["pp"]["r"]))
+        q_suggested = int(best["pp"].get("q", default_fallback["pp"]["q"]))
         rho_suggested = _suggest_from_space(trial, "rho", _resolve_param_space(search_spaces, "pp", "rho"))
         mu_lambda_suggested = _suggest_from_space(
             trial, "mu_lambda", _resolve_param_space(search_spaces, "pp", "mu_lambda")
         )
-        
-        # オフライン解のlambdaを探索（必要な場合）
+
         offline_lambda_l1 = suggest_offline_lambda(trial) if error_normalization == "offline_solution" else None
-        
+
         errs = []
         for run_idx in range(tuning_runs_per_trial):
             rng = make_rng("pp", trial.number, run_idx)
@@ -378,13 +312,12 @@ def tune_methods_for_scenario(
             b0 = np.ones(N)
             model = PPExogenousSEM(N, S0, b0, r=r_suggested, q=q_suggested, rho=rho_suggested, mu_lambda=mu_lambda_suggested)
             S_hat_list, _ = model.run(Y_gen, U_gen)
-            
-            # オフライン解を計算（必要な場合）
+
             S_offline = None
             if error_normalization == "offline_solution":
                 S_offline = solve_offline_sem_lasso_batch(Y_gen, U_gen, offline_lambda_l1)
-            
-            err = compute_error_for_tuning(S_hat_list[-1], S_ser[-1], S_offline)
+
+            err = _compute_error_for_tuning(S_hat_list[-1], S_ser[-1], S_offline)
             if not np.isfinite(err):
                 err = penalty_value
             errs.append(err)
@@ -399,10 +332,9 @@ def tune_methods_for_scenario(
         gamma_suggested = _suggest_from_space(trial, "gamma", _resolve_param_space(search_spaces, "pc", "gamma"))
         P_suggested = _suggest_from_space(trial, "P", _resolve_param_space(search_spaces, "pc", "P"))
         C_suggested = _suggest_from_space(trial, "C", _resolve_param_space(search_spaces, "pc", "C"))
-        
-        # オフライン解のlambdaを探索（必要な場合）
+
         offline_lambda_l1 = suggest_offline_lambda(trial) if error_normalization == "offline_solution" else None
-        
+
         errs = []
         for run_idx in range(tuning_runs_per_trial):
             rng = make_rng("pc", trial.number, run_idx)
@@ -411,12 +343,11 @@ def tune_methods_for_scenario(
             Z = Z_gen[:, :T_tune]
             S_trunc = S_ser[:T_tune]
             S0_pc = np.zeros((N, N))
-            
-            # オフライン解を計算（必要な場合）
+
             S_offline = None
             if error_normalization == "offline_solution":
                 S_offline = solve_offline_sem_lasso_batch(X, Z, offline_lambda_l1)
-            
+
             try:
                 pc = PCSEM(
                     N,
@@ -432,7 +363,7 @@ def tune_methods_for_scenario(
                     T_init=T_mat,
                 )
                 estimates_pc, _ = pc.run(X, Z)
-                err_ts = [compute_error_for_tuning(estimates_pc[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
+                err_ts = [_compute_error_for_tuning(estimates_pc[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
                 mean_err = float(np.mean(err_ts))
                 if not np.isfinite(mean_err):
                     mean_err = penalty_value
@@ -453,10 +384,9 @@ def tune_methods_for_scenario(
         )
         gamma_suggested = _suggest_from_space(trial, "gamma", _resolve_param_space(search_spaces, "co", "gamma"))
         C_suggested = _suggest_from_space(trial, "C", _resolve_param_space(search_spaces, "co", "C"))
-        
-        # オフライン解のlambdaを探索（必要な場合）
+
         offline_lambda_l1 = suggest_offline_lambda(trial) if error_normalization == "offline_solution" else None
-        
+
         errs = []
         for run_idx in range(tuning_runs_per_trial):
             rng = make_rng("co", trial.number, run_idx)
@@ -466,18 +396,17 @@ def tune_methods_for_scenario(
             S_trunc = S_ser[:T_tune]
             S0_pc = np.zeros((N, N))
             snapshot = snapshot_pc_params()
-            lambda_reg = float(snapshot.get("lambda_reg", DEFAULT_HYPERPARAM_FALLBACK["pc"]["lambda_reg"]))
+            lambda_reg = float(snapshot.get("lambda_reg", default_fallback["pc"]["lambda_reg"]))
             if alpha_suggested is not None:
                 alpha = float(alpha_suggested)
             else:
-                alpha = float(snapshot.get("alpha", DEFAULT_HYPERPARAM_FALLBACK["pc"]["alpha"]))
+                alpha = float(snapshot.get("alpha", default_fallback["pc"]["alpha"]))
             P = 0
-            
-            # オフライン解を計算（必要な場合）
+
             S_offline = None
             if error_normalization == "offline_solution":
                 S_offline = solve_offline_sem_lasso_batch(X, Z, offline_lambda_l1)
-            
+
             try:
                 co = PCSEM(
                     N,
@@ -493,7 +422,7 @@ def tune_methods_for_scenario(
                     T_init=T_mat,
                 )
                 estimates_co, _ = co.run(X, Z)
-                err_ts = [compute_error_for_tuning(estimates_co[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
+                err_ts = [_compute_error_for_tuning(estimates_co[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
                 mean_err = float(np.mean(err_ts))
                 if not np.isfinite(mean_err):
                     mean_err = penalty_value
@@ -512,10 +441,9 @@ def tune_methods_for_scenario(
         beta_sgd_suggested = _suggest_from_space(
             trial, "beta_sgd", _resolve_param_space(search_spaces, "sgd", "beta_sgd")
         )
-        
-        # オフライン解のlambdaを探索（必要な場合）
+
         offline_lambda_l1 = suggest_offline_lambda(trial) if error_normalization == "offline_solution" else None
-        
+
         errs = []
         for run_idx in range(tuning_runs_per_trial):
             rng = make_rng("sgd", trial.number, run_idx)
@@ -525,20 +453,19 @@ def tune_methods_for_scenario(
             S_trunc = S_ser[:T_tune]
             S0_pc = np.zeros((N, N))
             snapshot = snapshot_pc_params()
-            lambda_reg = float(snapshot.get("lambda_reg", DEFAULT_HYPERPARAM_FALLBACK["pc"]["lambda_reg"]))
+            lambda_reg = float(snapshot.get("lambda_reg", default_fallback["pc"]["lambda_reg"]))
             if alpha_suggested is not None:
                 alpha = float(alpha_suggested)
             else:
-                alpha = float(snapshot.get("alpha", DEFAULT_HYPERPARAM_FALLBACK["pc"]["alpha"]))
+                alpha = float(snapshot.get("alpha", default_fallback["pc"]["alpha"]))
             gamma = 0.0
             P = 0
-            C = int(snapshot.get("C", DEFAULT_HYPERPARAM_FALLBACK["pc"]["C"]))
-            
-            # オフライン解を計算（必要な場合）
+            C = int(snapshot.get("C", default_fallback["pc"]["C"]))
+
             S_offline = None
             if error_normalization == "offline_solution":
                 S_offline = solve_offline_sem_lasso_batch(X, Z, offline_lambda_l1)
-            
+
             try:
                 sgd = PCSEM(
                     N,
@@ -554,7 +481,7 @@ def tune_methods_for_scenario(
                     T_init=T_mat,
                 )
                 estimates_sgd, _ = sgd.run(X, Z)
-                err_ts = [compute_error_for_tuning(estimates_sgd[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
+                err_ts = [_compute_error_for_tuning(estimates_sgd[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
                 mean_err = float(np.mean(err_ts))
                 if not np.isfinite(mean_err):
                     mean_err = penalty_value
@@ -572,19 +499,18 @@ def tune_methods_for_scenario(
                 trial, "step_scale", _resolve_param_space(search_spaces, "pg", "step_scale")
             )
         except KeyError:
-            step_scale_suggested = float(best["pg"].get("step_scale", DEFAULT_HYPERPARAM_FALLBACK["pg"]["step_scale"]))
+            step_scale_suggested = float(best["pg"].get("step_scale", default_fallback["pg"]["step_scale"]))
         try:
             use_fista_suggested = _suggest_from_space(
                 trial, "use_fista", _resolve_param_space(search_spaces, "pg", "use_fista")
             )
         except KeyError:
-            use_fista_suggested = bool(best["pg"].get("use_fista", DEFAULT_HYPERPARAM_FALLBACK["pg"]["use_fista"]))
+            use_fista_suggested = bool(best["pg"].get("use_fista", default_fallback["pg"]["use_fista"]))
 
-        max_iter_pg = int(best["pg"].get("max_iter", DEFAULT_HYPERPARAM_FALLBACK["pg"]["max_iter"]))
-        tol_pg = float(best["pg"].get("tol", DEFAULT_HYPERPARAM_FALLBACK["pg"]["tol"]))
-        use_backtracking_pg = bool(best["pg"].get("use_backtracking", DEFAULT_HYPERPARAM_FALLBACK["pg"]["use_backtracking"]))
-        
-        # オフライン解のlambdaを探索（必要な場合）
+        max_iter_pg = int(best["pg"].get("max_iter", default_fallback["pg"]["max_iter"]))
+        tol_pg = float(best["pg"].get("tol", default_fallback["pg"]["tol"]))
+        use_backtracking_pg = bool(best["pg"].get("use_backtracking", default_fallback["pg"]["use_backtracking"]))
+
         offline_lambda_l1 = suggest_offline_lambda(trial) if error_normalization == "offline_solution" else None
 
         errs = []
@@ -594,12 +520,11 @@ def tune_methods_for_scenario(
             X = Y_gen[:, :T_tune]
             Z = Z_gen[:, :T_tune]
             S_trunc = S_ser[:T_tune]
-            
-            # オフライン解を計算（必要な場合）
+
             S_offline = None
             if error_normalization == "offline_solution":
                 S_offline = solve_offline_sem_lasso_batch(X, Z, offline_lambda_l1)
-            
+
             config_pg = ProximalGradientConfig(
                 lambda_reg=float(lambda_reg_suggested),
                 step_size=None,
@@ -614,7 +539,7 @@ def tune_methods_for_scenario(
             model_pg = ProximalGradientBatchSEM(N, config_pg)
             try:
                 estimates_pg, _ = model_pg.run(X, Z)
-                err_ts = [compute_error_for_tuning(estimates_pg[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
+                err_ts = [_compute_error_for_tuning(estimates_pg[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
                 mean_err = float(np.mean(err_ts))
                 if not np.isfinite(mean_err):
                     mean_err = penalty_value
@@ -670,7 +595,6 @@ def tune_methods_for_scenario(
         study = optuna.create_study(direction="minimize")
 
         def wrapped_callback(study: optuna.study.Study, trial: optuna.trial.FrozenTrial) -> None:
-            # シャットダウンフラグをチェック
             if _shutdown_event.is_set():
                 study.stop()
                 return
@@ -709,18 +633,17 @@ def tune_methods_for_scenario(
     method_specs = {name: all_method_specs[name] for name in selected_methods}
 
     method_results: Dict[str, Dict[str, Any]] = {}
-    
-    # シグナルハンドラを設定（Ctrl+C で中断可能にする）
+
     _shutdown_event.clear()
     original_handler = signal.signal(signal.SIGINT, _signal_handler)
-    
+
     try:
         with ThreadPoolExecutor(max_workers=len(method_specs)) as executor:
             future_map = {
-                executor.submit(run_study, name, spec["objective"], spec["callback"]): name for name, spec in method_specs.items()
+                executor.submit(run_study, name, spec["objective"], spec["callback"]): name
+                for name, spec in method_specs.items()
             }
             for future in as_completed(future_map):
-                # シャットダウンフラグをチェック
                 if _shutdown_event.is_set():
                     executor.shutdown(wait=False, cancel_futures=True)
                     break
@@ -728,7 +651,7 @@ def tune_methods_for_scenario(
                 try:
                     result_name, result_params, result_value = future.result()
                     method_results[result_name] = {"params": result_params, "best_value": result_value}
-                except Exception as exc:  # pragma: no cover
+                except Exception as exc:
                     progress_queue.put(
                         {
                             "method": method_name,
@@ -742,13 +665,11 @@ def tune_methods_for_scenario(
                         progress_thread.join()
                         raise exc
     finally:
-        # シグナルハンドラを復元
         signal.signal(signal.SIGINT, original_handler)
 
     progress_queue.put(None)
     progress_thread.join()
-    
-    # 中断された場合
+
     if _shutdown_event.is_set():
         print("[INFO] Tuning was interrupted. Returning partial results.", flush=True)
 
@@ -761,9 +682,9 @@ def tune_methods_for_scenario(
         params = method_results["pc"]["params"]
         best["pc"]["lambda_reg"] = float(params.get("lambda_reg", best["pc"]["lambda_reg"]))
         best["pc"]["alpha"] = float(params.get("alpha", best["pc"]["alpha"]))
-        best["pc"]["beta"] = float(params.get("beta_pc", best["pc"].get("beta", DEFAULT_HYPERPARAM_FALLBACK["pc"]["beta"])))
+        best["pc"]["beta"] = float(params.get("beta_pc", best["pc"].get("beta", default_fallback["pc"]["beta"])))
         best["pc"]["gamma"] = float(params.get("gamma", best["pc"]["gamma"]))
-        best["pc"]["P"] = int(params.get("P", best["pc"].get("P", DEFAULT_HYPERPARAM_FALLBACK["pc"]["P"])))
+        best["pc"]["P"] = int(params.get("P", best["pc"].get("P", default_fallback["pc"]["P"])))
         best["pc"]["C"] = int(params.get("C", best["pc"]["C"]))
 
     if "co" in method_results:
@@ -789,8 +710,7 @@ def tune_methods_for_scenario(
             best["pg"]["step_scale"] = float(params["step_scale"])
         if "use_fista" in params:
             best["pg"]["use_fista"] = bool(params["use_fista"])
-    
-    # オフライン解のlambdaをチューニング結果から取得（最初に見つかったものを使用）
+
     tuned_offline_lambda_l1 = None
     if error_normalization == "offline_solution":
         for method_name in ["pc", "pp", "co", "sgd", "pg"]:
@@ -799,36 +719,42 @@ def tune_methods_for_scenario(
                 if "offline_lambda_l1" in params:
                     tuned_offline_lambda_l1 = float(params["offline_lambda_l1"])
                     break
-        # 見つからない場合は探索範囲の幾何平均を使用
         if tuned_offline_lambda_l1 is None:
             import math
+
             offline_space = cfg.search_spaces.offline.offline_lambda_l1
             tuned_offline_lambda_l1 = math.sqrt(offline_space.low * offline_space.high)
 
-    best = {method: _clean_dict(params) for method, params in best.items()}
-    initial_best_clean = {method: _clean_dict(params) for method, params in initial_best.items()}
-    
-    # チューニング結果に offline_lambda_l1 を追加（offline_solution モードの場合）
+    best = {method: clean_dict(params) for method, params in best.items()}
+    initial_best_clean = {method: clean_dict(params) for method, params in initial_best.items()}
+
     if error_normalization == "offline_solution" and tuned_offline_lambda_l1 is not None:
         best["offline_lambda_l1"] = tuned_offline_lambda_l1
+
+    def _clean_obj(obj: Any) -> Any:
+        if isinstance(obj, dict):
+            return {key: _clean_obj(val) for key, val in obj.items()}
+        if isinstance(obj, (list, tuple)):
+            return [_clean_obj(val) for val in obj]
+        return to_python_value(obj)
 
     summary = {
         "seed": seed,
         "tuning_trials": tuning_trials,
         "tuning_runs_per_trial": tuning_runs_per_trial,
         "truncation_horizon": truncation_horizon,
-        "generator_kwargs": {key: _to_python_value(val) for key, val in generator_kwargs.items()},
+        "generator_kwargs": {key: to_python_value(val) for key, val in generator_kwargs.items()},
         "metric": {
             "error_normalization": error_normalization,
             "offline_lambda_l1": tuned_offline_lambda_l1 if error_normalization == "offline_solution" else None,
         },
         "initial_fallback": initial_best_clean,
-        "search_spaces": _clean(search_spaces),
-        "search_overrides": _clean(search_space_overrides) if search_space_overrides else {},
+        "search_spaces": _clean_obj(search_spaces),
+        "search_overrides": _clean_obj(search_space_overrides) if search_space_overrides else {},
         "method_results": {
             name: {
-                "best_params": _clean_dict(result.get("params", {})),
-                "best_value": _to_python_value(result.get("best_value")),
+                "best_params": clean_dict(result.get("params", {})),
+                "best_value": to_python_value(result.get("best_value")),
             }
             for name, result in method_results.items()
         },
@@ -855,15 +781,14 @@ def tune_piecewise_all_methods(
     config.py から設定を取得する。引数で明示的に指定した場合は上書き。
     """
     cfg = get_config()
-    
-    # config.py から設定を取得（引数で上書き可能）
+
     _N = N if N is not None else cfg.common.N
     _T = T if T is not None else cfg.common.T
     _sparsity = sparsity if sparsity is not None else cfg.common.sparsity
     _max_weight = max_weight if max_weight is not None else cfg.common.max_weight
     _std_e = std_e if std_e is not None else cfg.common.std_e
     _K = K if K is not None else cfg.piecewise.K
-    
+
     generator_kwargs = {
         "N": _N,
         "T": _T,
@@ -906,14 +831,13 @@ def tune_linear_all_methods(
     config.py から設定を取得する。引数で明示的に指定した場合は上書き。
     """
     cfg = get_config()
-    
-    # config.py から設定を取得（引数で上書き可能）
+
     _N = N if N is not None else cfg.common.N
     _T = T if T is not None else cfg.common.T
     _sparsity = sparsity if sparsity is not None else cfg.common.sparsity
     _max_weight = max_weight if max_weight is not None else cfg.common.max_weight
     _std_e = std_e if std_e is not None else cfg.common.std_e
-    
+
     generator_kwargs = {
         "N": _N,
         "T": _T,

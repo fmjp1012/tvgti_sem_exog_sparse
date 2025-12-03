@@ -1,2 +1,4 @@
 from .utils import elimination_matrix_h, duplication_matrix_h, elimination_matrix_hh, duplication_matrix_hh, soft_thresholding, project_to_zero_diagonal_symmetric, solve_offline_sem, calc_snr, scale_S_for_target_snr
 from .generator import generate_random_S, generate_regular_S, generate_piecewise_X_K, generate_piecewise_X_K_with_snr, generate_brownian_piecewise_X_K, generate_linear_X, generate_linear_X_L
+from .metrics import compute_normalized_error, compute_error_series, compute_frobenius_error
+from .formatting import fmt_value, coerce_bool, print_block, to_python_value, clean_dict, to_list_of_ints, to_list_of_bools

@@ -1,3 +1,9 @@
+"""
+データ生成モジュール
+
+時変 SEM (Structural Equation Model) のシミュレーションデータを生成します。
+"""
+
 from typing import List, Tuple
 
 import numpy as np
@@ -5,8 +11,13 @@ from numpy.random import Generator
 
 
 def _resolve_rng(rng: Generator | None) -> Generator:
+    """乱数生成器を解決する。"""
     return rng if rng is not None else np.random.default_rng()
 
+
+# =============================================================================
+# 隣接行列生成関数
+# =============================================================================
 
 def generate_random_S_asymmetric_hollow(
     N: int,
@@ -14,6 +25,25 @@ def generate_random_S_asymmetric_hollow(
     max_weight: float,
     rng: Generator | None = None,
 ) -> np.ndarray:
+    """
+    ランダムな非対称中空隣接行列を生成する。
+
+    Parameters
+    ----------
+    N : int
+        ノード数
+    sparsity : float
+        ゼロ要素の割合 (0.0-1.0)
+    max_weight : float
+        非ゼロ要素の最大絶対値
+    rng : Generator, optional
+        乱数生成器
+
+    Returns
+    -------
+    np.ndarray
+        形状 (N, N) の隣接行列（対角成分は 0）
+    """
     rng = _resolve_rng(rng)
     S = rng.uniform(-max_weight, max_weight, size=(N, N))
     mask = rng.random((N, N)) < (1.0 - sparsity)
@@ -28,6 +58,25 @@ def generate_regular_S_asymmetric_hollow(
     max_weight: float,
     rng: Generator | None = None,
 ) -> np.ndarray:
+    """
+    各行の非ゼロ要素数が均一な非対称中空隣接行列を生成する。
+
+    Parameters
+    ----------
+    N : int
+        ノード数
+    sparsity : float
+        ゼロ要素の割合 (0.0-1.0)
+    max_weight : float
+        非ゼロ要素の最大絶対値
+    rng : Generator, optional
+        乱数生成器
+
+    Returns
+    -------
+    np.ndarray
+        形状 (N, N) の隣接行列（対角成分は 0）
+    """
     rng = _resolve_rng(rng)
     S = np.zeros((N, N))
     k_zero = int(round((N - 1) * sparsity))
@@ -42,6 +91,143 @@ def generate_regular_S_asymmetric_hollow(
     np.fill_diagonal(S, 0.0)
     return S
 
+
+def _generate_S_matrix(
+    N: int,
+    sparsity: float,
+    max_weight: float,
+    s_type: str,
+    rng: Generator,
+) -> np.ndarray:
+    """
+    指定されたタイプの隣接行列を生成する（内部ヘルパー）。
+
+    Parameters
+    ----------
+    N : int
+        ノード数
+    sparsity : float
+        スパース性
+    max_weight : float
+        最大重み
+    s_type : str
+        "regular" または "random"
+    rng : Generator
+        乱数生成器
+
+    Returns
+    -------
+    np.ndarray
+        隣接行列
+    """
+    if s_type == "regular":
+        return generate_regular_S_asymmetric_hollow(N, sparsity, max_weight, rng=rng)
+    else:
+        return generate_random_S_asymmetric_hollow(N, sparsity, max_weight, rng=rng)
+
+
+# =============================================================================
+# 共通ヘルパー関数
+# =============================================================================
+
+def _generate_exog_and_noise(
+    N: int,
+    T: int,
+    t_min: float,
+    t_max: float,
+    std_e: float,
+    z_dist: str,
+    rng: Generator,
+) -> Tuple[np.ndarray, np.ndarray, np.ndarray]:
+    """
+    外生変数係数行列 T、外生変数 Z、ノイズ E を生成する。
+
+    Parameters
+    ----------
+    N : int
+        ノード数
+    T : int
+        時系列長
+    t_min : float
+        外生変数係数の最小値
+    t_max : float
+        外生変数係数の最大値
+    std_e : float
+        ノイズの標準偏差
+    z_dist : str
+        外生変数の分布 ("uniform01" or "normal")
+    rng : Generator
+        乱数生成器
+
+    Returns
+    -------
+    Tuple[T_mat, Z, E]
+        - T_mat: 対角行列 (N x N)
+        - Z: 外生変数 (N x T)
+        - E: ノイズ (N x T)
+    """
+    # 対角 T 行列
+    t_diag = rng.uniform(t_min, t_max, size=N)
+    T_mat = np.diag(t_diag)
+    
+    # 外生変数 Z
+    if z_dist == "uniform01":
+        Z = rng.uniform(0.0, 1.0, size=(N, T))
+    else:
+        Z = rng.normal(0.0, 1.0, size=(N, T))
+    
+    # ノイズ E
+    E = rng.normal(0.0, std_e, size=(N, T))
+    
+    return T_mat, Z, E
+
+
+def _solve_sem_sequence(
+    S_series: List[np.ndarray],
+    T_mat: np.ndarray,
+    Z: np.ndarray,
+    E: np.ndarray,
+) -> np.ndarray:
+    """
+    SEM 方程式の時系列を解いて観測データ X を生成する。
+
+    x_t = S(t) x_t + T z_t + ε_t
+    => (I - S(t)) x_t = T z_t + ε_t
+    => x_t = (I - S(t))^{-1} (T z_t + ε_t)
+
+    Parameters
+    ----------
+    S_series : List[np.ndarray]
+        隣接行列の時系列
+    T_mat : np.ndarray
+        外生変数係数行列
+    Z : np.ndarray
+        外生変数 (N x T)
+    E : np.ndarray
+        ノイズ (N x T)
+
+    Returns
+    -------
+    np.ndarray
+        観測データ X (N x T)
+    """
+    N = T_mat.shape[0]
+    T_len = Z.shape[1]
+    I = np.eye(N)
+    
+    X_list = []
+    for t in range(T_len):
+        S_t = S_series[t]
+        rhs = T_mat @ Z[:, t] + E[:, t]
+        x_t = np.linalg.solve(I - S_t, rhs)
+        X_list.append(x_t.reshape(N, 1))
+    
+    return np.concatenate(X_list, axis=1)
+
+
+# =============================================================================
+# Piecewise シナリオ
+# =============================================================================
 
 def generate_piecewise_X_with_exog(
     N: int,
@@ -93,18 +279,12 @@ def generate_piecewise_X_with_exog(
     X : np.ndarray
         Generated observed signals (N × T).
     """
-
     rng = _resolve_rng(rng)
 
-    I = np.eye(N)
-
-    # --- (1) Piecewise-constant S(t) generation ---
+    # (1) Piecewise-constant S(t) generation
     S_list: List[np.ndarray] = []
     for _ in range(K):
-        if s_type == "regular":
-            S = generate_regular_S_asymmetric_hollow(N, sparsity, max_weight, rng=rng)
-        else:
-            S = generate_random_S_asymmetric_hollow(N, sparsity, max_weight, rng=rng)
+        S = _generate_S_matrix(N, sparsity, max_weight, s_type, rng)
         S_list.append(S)
 
     seg = [T // K] * K
@@ -113,29 +293,18 @@ def generate_piecewise_X_with_exog(
     for i, length in enumerate(seg):
         S_series.extend([S_list[i]] * length)
 
-    # --- (2) Diagonal T matrix ---
-    t_diag = rng.uniform(t_min, t_max, size=N)
-    T_mat = np.diag(t_diag)
+    # (2) Generate T, Z, E
+    T_mat, Z, E = _generate_exog_and_noise(N, T, t_min, t_max, std_e, z_dist, rng)
 
-    # --- (3) Generate exogenous inputs Z and Gaussian noise E ---
-    if z_dist == "uniform01":
-        Z = rng.uniform(0.0, 1.0, size=(N, T))
-    else:
-        Z = rng.normal(0.0, 1.0, size=(N, T))
-    E = rng.normal(0.0, std_e, size=(N, T))
-
-    # --- (4) Generate observed signals X(t) ---
-    X_list = []
-    for t in range(T):
-        S_t = S_series[t]
-        rhs = T_mat @ Z[:, t] + E[:, t]
-        # (I - S_t) x_t = rhs  →  x_t = (I - S_t)^(-1) rhs
-        x_t = np.linalg.solve(I - S_t, rhs)
-        X_list.append(x_t.reshape(N, 1))
-    X = np.concatenate(X_list, axis=1)
+    # (3) Generate X
+    X = _solve_sem_sequence(S_series, T_mat, Z, E)
 
     return S_series, T_mat, Z, X
 
+
+# =============================================================================
+# Linear シナリオ
+# =============================================================================
 
 def generate_linear_X_with_exog(
     N: int,
@@ -184,16 +353,11 @@ def generate_linear_X_with_exog(
     X : np.ndarray
         Generated observed signals (N × T).
     """
-
     rng = _resolve_rng(rng)
 
-    # --- (1) Generate start and end S matrices and linearly interpolate ---
-    if s_type == "regular":
-        S_start = generate_regular_S_asymmetric_hollow(N, sparsity, max_weight, rng=rng)
-        S_end = generate_regular_S_asymmetric_hollow(N, sparsity, max_weight, rng=rng)
-    else:
-        S_start = generate_random_S_asymmetric_hollow(N, sparsity, max_weight, rng=rng)
-        S_end = generate_random_S_asymmetric_hollow(N, sparsity, max_weight, rng=rng)
+    # (1) Generate start and end S matrices and linearly interpolate
+    S_start = _generate_S_matrix(N, sparsity, max_weight, s_type, rng)
+    S_end = _generate_S_matrix(N, sparsity, max_weight, s_type, rng)
 
     S_series: List[np.ndarray] = []
     for t in range(T):
@@ -202,29 +366,18 @@ def generate_linear_X_with_exog(
         np.fill_diagonal(S_t, 0.0)
         S_series.append(S_t)
 
-    # --- (2) Diagonal T matrix ---
-    t_diag = rng.uniform(t_min, t_max, size=N)
-    T_mat = np.diag(t_diag)
+    # (2) Generate T, Z, E
+    T_mat, Z, E = _generate_exog_and_noise(N, T, t_min, t_max, std_e, z_dist, rng)
 
-    # --- (3) Generate exogenous variables Z and noise E ---
-    if z_dist == "uniform01":
-        Z = rng.uniform(0.0, 1.0, size=(N, T))
-    else:
-        Z = rng.normal(0.0, 1.0, size=(N, T))
-    E = rng.normal(0.0, std_e, size=(N, T))
-
-    # --- (4) Generate X(t) ---
-    I = np.eye(N)
-    X_list = []
-    for t in range(T):
-        rhs = T_mat @ Z[:, t] + E[:, t]
-        x_t = np.linalg.solve(I - S_series[t], rhs)
-        X_list.append(x_t.reshape(N, 1))
-    X = np.concatenate(X_list, axis=1)
+    # (3) Generate X
+    X = _solve_sem_sequence(S_series, T_mat, Z, E)
 
     return S_series, T_mat, Z, X
 
 
+# =============================================================================
+# Brownian シナリオ
+# =============================================================================
 
 def generate_brownian_piecewise_X_with_exog(
     N: int,
@@ -279,14 +432,10 @@ def generate_brownian_piecewise_X_with_exog(
     X : np.ndarray
         Generated observed signals (N × T).
     """
-
     rng = _resolve_rng(rng)
 
-    # --- (1) Initialize base S and update by Brownian noise ---
-    if s_type == "regular":
-        S0 = generate_regular_S_asymmetric_hollow(N, sparsity, max_weight, rng=rng)
-    else:
-        S0 = generate_random_S_asymmetric_hollow(N, sparsity, max_weight, rng=rng)
+    # (1) Initialize base S and update by Brownian noise
+    S0 = _generate_S_matrix(N, sparsity, max_weight, s_type, rng)
 
     S_list: List[np.ndarray] = [S0]
     for _ in range(1, K):
@@ -295,30 +444,17 @@ def generate_brownian_piecewise_X_with_exog(
         np.fill_diagonal(S_new, 0.0)
         S_list.append(S_new)
 
-    # --- (2) Assign each S_k to time segments ---
+    # (2) Assign each S_k to time segments
     seg = [T // K] * K
     seg[-1] += T % K
     S_series: List[np.ndarray] = []
     for i, length in enumerate(seg):
         S_series.extend([S_list[i]] * length)
 
-    # --- (3) Generate T, Z, E ---
-    t_diag = rng.uniform(t_min, t_max, size=N)
-    T_mat = np.diag(t_diag)
+    # (3) Generate T, Z, E
+    T_mat, Z, E = _generate_exog_and_noise(N, T, t_min, t_max, std_e, z_dist, rng)
 
-    if z_dist == "uniform01":
-        Z = rng.uniform(0.0, 1.0, size=(N, T))
-    else:
-        Z = rng.normal(0.0, 1.0, size=(N, T))
-    E = rng.normal(0.0, std_e, size=(N, T))
-
-    # --- (4) Generate X(t) ---
-    I = np.eye(N)
-    X_list = []
-    for t in range(T):
-        rhs = T_mat @ Z[:, t] + E[:, t]
-        x_t = np.linalg.solve(I - S_series[t], rhs)
-        X_list.append(x_t.reshape(N, 1))
-    X = np.concatenate(X_list, axis=1)
+    # (4) Generate X
+    X = _solve_sem_sequence(S_series, T_mat, Z, E)
 
     return S_series, T_mat, Z, X
