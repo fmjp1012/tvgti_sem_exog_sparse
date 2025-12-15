@@ -300,8 +300,8 @@ class SimulationConfig:
 # =============================================================================
 # True: テスト用の軽量設定（プログラム動作確認用、すぐに終わる）
 # False: 本番用設定（実際のシミュレーション用）
-USE_TEST_CONFIG = True
-# USE_TEST_CONFIG = False
+# USE_TEST_CONFIG = True
+USE_TEST_CONFIG = False
 
 # =============================================================================
 # ★★★ 設定を変更するにはここを編集してください ★★★
@@ -331,7 +331,7 @@ CONFIG_MAIN = SimulationConfig(
     
     # Piecewiseシナリオのパラメータ
     piecewise=PiecewiseParams(
-        K=4,
+        K=1,
     ),
     
     # データ生成パラメータ
@@ -346,7 +346,7 @@ CONFIG_MAIN = SimulationConfig(
     tuning=TuningParams(
         tuning_trials=300,
         tuning_runs_per_trial=1,
-        truncation_horizon=400,
+        truncation_horizon=100,
         tuning_seed=4,
     ),
     

@@ -331,7 +331,7 @@ CONFIG_MAIN = SimulationConfig(
     
     # Piecewiseシナリオのパラメータ
     piecewise=PiecewiseParams(
-        K=4,
+        K=1,
     ),
     
     # データ生成パラメータ
@@ -346,7 +346,7 @@ CONFIG_MAIN = SimulationConfig(
     tuning=TuningParams(
         tuning_trials=300,
         tuning_runs_per_trial=1,
-        truncation_horizon=400,
+        truncation_horizon=100,
         tuning_seed=4,
     ),
     
