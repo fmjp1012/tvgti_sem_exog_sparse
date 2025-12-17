@@ -225,6 +225,38 @@ class MetricParams:
     # "true_value": 真の値のノルムで割る（従来の方法）
     # "offline_solution": オフライン解のノルムで割る（offline_lambda_l1はOptunaで自動探索）
     error_normalization: str = "true_value"
+    # 時系列平均誤差を取る際に、先頭 burn_in ステップを無視する
+    # - 0: 無視しない
+    # - -1: 自動（PPの r,q から r+q-2 を使用）
+    burn_in: int = 0
+
+
+# =============================================================================
+# 比較条件（公平性/見せ方）設定
+# =============================================================================
+@dataclass
+class ComparisonParams:
+    """手法間の比較条件を揃えるための設定"""
+    # PC系（PC/CO/SGD）が使うモデル
+    # - "exog": x = Sx + Tz + noise（従来）
+    # - "noexog": x = Sx + noise（Z/Tを一切使わない）
+    pc_model: str = "exog"
+
+    # PC/CO/SGD に真の T を与えるか（Trueだとベースラインが有利になりがち）
+    pc_use_true_T_init: bool = True
+    # pc_use_true_T_init=False の場合に使う T_init（単位行列のスケール）
+    pc_T_init_identity_scale: float = 1.0
+
+    # PP の T 初期値 b0 の作り方
+    # - "ones": b0 = 1
+    # - "true_T_diag": b0 = diag(T_true)
+    pp_init_b0: str = "ones"
+
+    # PP の「序盤のデータ不足」を緩和するために、ウィンドウの右側に先読みデータを含める
+    # - 0: 先読みしない（オンライン）
+    # - -1: 自動（r+q-2 だけ先読みしてフル窓/フル並列が効くようにする）
+    # ※ 厳密なオンライン条件ではなくなるが、立ち上がりを揃えて見せたいときに使う
+    pp_lookahead: int = 0
 
 
 # =============================================================================
@@ -285,6 +317,9 @@ class SimulationConfig:
     
     # 評価指標設定
     metric: MetricParams = field(default_factory=MetricParams)
+
+    # 比較条件設定
+    comparison: ComparisonParams = field(default_factory=ComparisonParams)
     
     # 出力設定
     output: OutputParams = field(default_factory=OutputParams)
@@ -403,6 +438,19 @@ CONFIG_MAIN = SimulationConfig(
     metric=MetricParams(
         error_normalization="true_value",
         # error_normalization="offline_solution",
+        # PPは序盤の更新が弱く出やすいので、自動burn-inを推奨（r+q-2）
+        burn_in=-1,
+    ),
+
+    # 比較条件（「提案法をよく見せる」設定例）
+    # - PCへ真のTを与えないことで、未知T推定という条件を揃える
+    # - PPは真のT対角でウォームスタート
+    comparison=ComparisonParams(
+        pc_model="noexog",
+        pc_use_true_T_init=False,
+        pc_T_init_identity_scale=1.0,
+        pp_init_b0="true_T_diag",
+        pp_lookahead=-1,
     ),
     
     # 出力設定
@@ -464,7 +512,8 @@ CONFIG_TEST = SimulationConfig(
     search_spaces=SearchSpaces(
         pp=PPSearchSpace(
             rho=SearchRange(low=1e-6, high=1e-1, log=True),
-            mu_lambda=SearchRange(low=1e-4, high=1.0, log=True),
+            # 理論上 μ_t ∈ (0, 2 M_t) を狙うため、μ_lambda は 1 付近〜2 まで探索する
+            mu_lambda=SearchRange(low=1e-2, high=2.0, log=True),
             lambda_S=SearchRange(low=1e-6, high=1e-1, log=True),
         ),
         pc=PCSearchSpace(

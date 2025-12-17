@@ -102,6 +102,7 @@ class BaseExperimentRunner(ABC):
         
         # 評価指標設定
         self.error_normalization = self.cfg.metric.error_normalization
+        self.burn_in_cfg = int(getattr(self.cfg.metric, "burn_in", 0))
 
     @abstractmethod
     def get_scenario_name(self) -> str:
@@ -168,11 +169,22 @@ class BaseExperimentRunner(ABC):
         # 評価指標設定
         metric_items: Dict[str, object] = {
             "error_normalization": self.error_normalization,
+            "burn_in": self.burn_in_cfg,
         }
         if self.error_normalization == "offline_solution":
             offline_space = self.cfg.search_spaces.offline.offline_lambda_l1
             metric_items["offline_lambda_l1 (range)"] = f"[{offline_space.low}, {offline_space.high}]"
         print_block("Metric Settings", metric_items)
+
+        # 比較条件
+        comp = getattr(self.cfg, "comparison", None)
+        if comp is not None:
+            print_block("Comparison Settings", {
+                "pc_model": getattr(comp, "pc_model", "exog"),
+                "pc_use_true_T_init": getattr(comp, "pc_use_true_T_init", True),
+                "pc_T_init_identity_scale": getattr(comp, "pc_T_init_identity_scale", 1.0),
+                "pp_init_b0": getattr(comp, "pp_init_b0", "ones"),
+            })
         
         # ハイパーパラメータ
         hp_dict = hyperparams_to_dict(self.hyperparams)
@@ -219,6 +231,7 @@ class BaseExperimentRunner(ABC):
             flags=self.flags,
             hyperparams=self.hyperparams,
             error_normalization=self.error_normalization,
+            comparison=getattr(self.cfg, "comparison", None),
         )
         
         return executor.execute_all(Y, Z, S_series, T_mat, S_offline)
@@ -282,6 +295,12 @@ class BaseExperimentRunner(ABC):
         save_path : Path
             保存先パス
         """
+        burn_in = self.burn_in_cfg
+        if burn_in == -1:
+            # 自動burn-inは PP の r,q から算出
+            burn_in = int(getattr(self.hyperparams.pp, "r", 0)) + int(getattr(self.hyperparams.pp, "q", 0)) - 2
+        burn_in = max(0, int(burn_in))
+
         plt.figure(figsize=(10, 6))
         
         # プロット順序と色を定義
@@ -296,6 +315,9 @@ class BaseExperimentRunner(ABC):
         for method, color, label in plot_order:
             if error_means.get(method) is not None:
                 plt.plot(error_means[method], color=color, label=label)
+
+        if burn_in > 0:
+            plt.axvline(burn_in, color="black", linestyle="--", linewidth=1.0, alpha=0.6, label=f"burn-in={burn_in}")
         
         plt.yscale("log")
         plt.xlim(left=0, right=self.T)
@@ -310,6 +332,25 @@ class BaseExperimentRunner(ABC):
         plt.legend()
         plt.savefig(str(save_path))
         plt.show()
+
+        # burn-in 以降だけを見せる図も保存（提案法の“立ち上がり”問題を切り分ける）
+        if burn_in > 0:
+            plt.figure(figsize=(10, 6))
+            for method, color, label in plot_order:
+                if error_means.get(method) is not None:
+                    plt.plot(np.arange(burn_in, self.T), error_means[method][burn_in:], color=color, label=label)
+            plt.yscale("log")
+            plt.xlim(left=burn_in, right=self.T)
+            plt.xlabel("t")
+            if self.error_normalization == "offline_solution":
+                plt.ylabel("Average Error Ratio (vs Offline)")
+            else:
+                plt.ylabel("Average NSE")
+            plt.grid(True, which="both")
+            plt.legend()
+            save_path_burn = save_path.with_name(f"{save_path.stem}_burnin{burn_in}{save_path.suffix}")
+            plt.savefig(str(save_path_burn))
+            plt.show()
 
     def save_metadata(
         self,

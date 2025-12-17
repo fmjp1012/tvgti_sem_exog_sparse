@@ -49,11 +49,12 @@ def project_structure(W):
     return W_proj
 
 
-def build_window_blocks(X, Z, center_idx, r):
+def build_window_blocks(X, Z, center_idx, r, lookahead: int = 0):
     """
     ウィンドウ行列 X_iota, Z_iota を作る（式 (X) に対応）
     - center_idx = ι
     - 取り出す区間は [ι-r+1, ι] の時系列スライス（時間が足りなければ先頭まで）
+    - lookahead > 0 の場合、右側に [ι+1, ι+lookahead] を追加で含める（先読み）
     - 列方向が時間方向。並び順は古い→新しいでも新しい→古いでも
       ||·||_F^2 や勾配計算には影響しないので、ここでは古い→新しいで統一
 
@@ -62,7 +63,7 @@ def build_window_blocks(X, Z, center_idx, r):
         Z_win: (N, L)
     """
     start = max(0, center_idx - r + 1)
-    end = center_idx + 1  # python sliceはend非含まないので+1
+    end = min(X.shape[1], center_idx + 1 + max(0, int(lookahead)))  # python sliceはend非含まないので+1
     X_win = X[:, start:end]
     Z_win = Z[:, start:end]
     return X_win, Z_win
@@ -127,6 +128,7 @@ class APSPExogenousSEM:
         eta: float,
         S_init: np.ndarray,
         T_init: np.ndarray,
+        lookahead: int = 0,
     ):
         self.N = N
         self.r = r
@@ -135,6 +137,7 @@ class APSPExogenousSEM:
         self.mu_lambda = mu_lambda
         self.lambda_S = lambda_S
         self.eta = eta
+        self.lookahead = int(lookahead)
 
         # W = [S | T] in R^{N x (2N)}
         S0 = S_init.copy()
@@ -205,7 +208,7 @@ class APSPExogenousSEM:
         g_list = []
 
         for iota in idx_list:
-            X_blk, Z_blk = build_window_blocks(X, Z, iota, self.r)
+            X_blk, Z_blk = build_window_blocks(X, Z, iota, self.r, lookahead=self.lookahead)
             W_iota_proj, g_iota_val = self._block_projection(X_blk, Z_blk)
             W_proj_list.append(W_iota_proj)
             g_list.append(g_iota_val)
@@ -379,6 +382,7 @@ class PPExogenousSEM:
         rho: float,
         mu_lambda: float,
         lambda_S: float = 0.0,
+        lookahead: int = 0,
     ) -> None:
         if b_init.ndim == 1:
             T_init = np.diag(b_init)
@@ -398,6 +402,7 @@ class PPExogenousSEM:
             eta=eta,
             S_init=S_init,
             T_init=T_init,
+            lookahead=int(lookahead),
         )
 
     def run(self, X: np.ndarray, Z: np.ndarray):

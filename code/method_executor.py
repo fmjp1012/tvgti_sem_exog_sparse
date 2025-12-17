@@ -15,7 +15,10 @@ from code.hyperparam_utils import ResolvedHyperparams
 from models.pg_batch import ProximalGradientBatchSEM, ProximalGradientConfig
 from models.pp_exog import PPExogenousSEM
 from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
+from models.tvgti_pc.prediction_correction_sem_noexog import PredictionCorrectionSEMNoExog as PCSEMNoExog
 from utils.metrics import compute_error_series
+from utils.metrics import compute_normalized_error
+from code.config import ComparisonParams
 
 
 @dataclass
@@ -78,20 +81,38 @@ class MethodExecutor:
         flags: MethodFlags,
         hyperparams: ResolvedHyperparams,
         error_normalization: str = "true_value",
+        comparison: Optional[ComparisonParams] = None,
     ):
         self.N = N
         self.flags = flags
         self.hp = hyperparams
         self.error_normalization = error_normalization
+        self.comparison = comparison if comparison is not None else ComparisonParams()
         
         # PC法の初期行列
         self._S0_pc = np.zeros((N, N))
+
+    def _resolve_pc_T_init(self, T_true: np.ndarray) -> np.ndarray:
+        """PC/CO/SGD に与える T_init を比較設定に従って決める。"""
+        if getattr(self.comparison, "pc_use_true_T_init", True):
+            return T_true
+        scale = float(getattr(self.comparison, "pc_T_init_identity_scale", 1.0))
+        return np.eye(self.N) * scale
+
+    def _resolve_pp_b0(self, T_true: np.ndarray) -> np.ndarray:
+        """PP に与える b0（=diag(T_init)）を比較設定に従って決める。"""
+        mode = str(getattr(self.comparison, "pp_init_b0", "ones")).strip()
+        if mode == "true_T_diag":
+            return np.diag(T_true)
+        # default: ones
+        return np.ones(self.N)
     
     def execute_pp(
         self,
         Y: np.ndarray,
         U: np.ndarray,
         S_series: List[np.ndarray],
+        T_true: np.ndarray,
         S_offline: Optional[np.ndarray],
     ) -> Tuple[Optional[List[float]], Optional[np.ndarray]]:
         """
@@ -106,7 +127,9 @@ class MethodExecutor:
             return None, None
         
         S0 = np.zeros((self.N, self.N))
-        b0 = np.ones(self.N)
+        b0 = self._resolve_pp_b0(T_true)
+        lookahead_cfg = int(getattr(self.comparison, "pp_lookahead", 0))
+        lookahead = (self.hp.pp.r + self.hp.pp.q - 2) if lookahead_cfg == -1 else max(0, lookahead_cfg)
         model = PPExogenousSEM(
             self.N, S0, b0,
             r=self.hp.pp.r,
@@ -114,6 +137,7 @@ class MethodExecutor:
             rho=self.hp.pp.rho,
             mu_lambda=self.hp.pp.mu_lambda,
             lambda_S=self.hp.pp.lambda_S,
+            lookahead=lookahead,
         )
         S_hat_list, _ = model.run(Y, U)
         
@@ -140,21 +164,37 @@ class MethodExecutor:
         """
         if not self.flags.pc:
             return None, None
-        
-        pc = PCSEM(
-            self.N,
-            self._S0_pc,
-            self.hp.pc.lambda_reg,
-            self.hp.pc.alpha,
-            self.hp.pc.beta,
-            self.hp.pc.gamma,
-            self.hp.pc.P,
-            self.hp.pc.C,
-            show_progress=False,
-            name="pc_baseline",
-            T_init=T_init,
-        )
-        estimates_pc, _ = pc.run(X, Z)
+        pc_model = str(getattr(self.comparison, "pc_model", "exog")).strip()
+        if pc_model == "noexog":
+            pc = PCSEMNoExog(
+                self.N,
+                self._S0_pc,
+                self.hp.pc.lambda_reg,
+                self.hp.pc.alpha,
+                self.hp.pc.beta,
+                self.hp.pc.gamma,
+                self.hp.pc.P,
+                self.hp.pc.C,
+                show_progress=False,
+                name="pc_noexog",
+            )
+            estimates_pc, _ = pc.run(X, Z=None)
+        else:
+            T_init = self._resolve_pc_T_init(T_init)
+            pc = PCSEM(
+                self.N,
+                self._S0_pc,
+                self.hp.pc.lambda_reg,
+                self.hp.pc.alpha,
+                self.hp.pc.beta,
+                self.hp.pc.gamma,
+                self.hp.pc.P,
+                self.hp.pc.C,
+                show_progress=False,
+                name="pc_baseline",
+                T_init=T_init,
+            )
+            estimates_pc, _ = pc.run(X, Z)
         
         errors = compute_error_series(
             estimates_pc, S_series, S_offline, self.error_normalization
@@ -179,21 +219,37 @@ class MethodExecutor:
         """
         if not self.flags.co:
             return None, None
-        
-        co = PCSEM(
-            self.N,
-            self._S0_pc,
-            self.hp.co.lambda_reg,
-            self.hp.co.alpha,
-            self.hp.co.beta_co,
-            self.hp.co.gamma,
-            0,  # P=0 for CO
-            self.hp.co.C,
-            show_progress=False,
-            name="co_baseline",
-            T_init=T_init,
-        )
-        estimates_co, _ = co.run(X, Z)
+        pc_model = str(getattr(self.comparison, "pc_model", "exog")).strip()
+        if pc_model == "noexog":
+            co = PCSEMNoExog(
+                self.N,
+                self._S0_pc,
+                self.hp.co.lambda_reg,
+                self.hp.co.alpha,
+                self.hp.co.beta_co,
+                self.hp.co.gamma,
+                0,  # P=0 for CO
+                self.hp.co.C,
+                show_progress=False,
+                name="co_noexog",
+            )
+            estimates_co, _ = co.run(X, Z=None)
+        else:
+            T_init = self._resolve_pc_T_init(T_init)
+            co = PCSEM(
+                self.N,
+                self._S0_pc,
+                self.hp.co.lambda_reg,
+                self.hp.co.alpha,
+                self.hp.co.beta_co,
+                self.hp.co.gamma,
+                0,  # P=0 for CO
+                self.hp.co.C,
+                show_progress=False,
+                name="co_baseline",
+                T_init=T_init,
+            )
+            estimates_co, _ = co.run(X, Z)
         
         errors = compute_error_series(
             estimates_co, S_series, S_offline, self.error_normalization
@@ -218,21 +274,37 @@ class MethodExecutor:
         """
         if not self.flags.sgd:
             return None, None
-        
-        sgd = PCSEM(
-            self.N,
-            self._S0_pc,
-            self.hp.sgd.lambda_reg,
-            self.hp.sgd.alpha,
-            self.hp.sgd.beta_sgd,
-            0.0,  # gamma=0 for SGD
-            0,    # P=0 for SGD
-            self.hp.sgd.C,
-            show_progress=False,
-            name="sgd_baseline",
-            T_init=T_init,
-        )
-        estimates_sgd, _ = sgd.run(X, Z)
+        pc_model = str(getattr(self.comparison, "pc_model", "exog")).strip()
+        if pc_model == "noexog":
+            sgd = PCSEMNoExog(
+                self.N,
+                self._S0_pc,
+                self.hp.sgd.lambda_reg,
+                self.hp.sgd.alpha,
+                self.hp.sgd.beta_sgd,
+                0.0,  # gamma=0 for SGD
+                0,    # P=0 for SGD
+                self.hp.sgd.C,
+                show_progress=False,
+                name="sgd_noexog",
+            )
+            estimates_sgd, _ = sgd.run(X, Z=None)
+        else:
+            T_init = self._resolve_pc_T_init(T_init)
+            sgd = PCSEM(
+                self.N,
+                self._S0_pc,
+                self.hp.sgd.lambda_reg,
+                self.hp.sgd.alpha,
+                self.hp.sgd.beta_sgd,
+                0.0,  # gamma=0 for SGD
+                0,    # P=0 for SGD
+                self.hp.sgd.C,
+                show_progress=False,
+                name="sgd_baseline",
+                T_init=T_init,
+            )
+            estimates_sgd, _ = sgd.run(X, Z)
         
         errors = compute_error_series(
             estimates_sgd, S_series, S_offline, self.error_normalization
@@ -312,7 +384,7 @@ class MethodExecutor:
             result.estimates_final["Offline"] = S_offline
         
         # PP法
-        errors_pp, est_pp = self.execute_pp(Y, Z, S_series, S_offline)
+        errors_pp, est_pp = self.execute_pp(Y, Z, S_series, T_init, S_offline)
         if errors_pp is not None:
             result.errors["pp"] = errors_pp
             result.estimates_final["PP"] = est_pp
@@ -340,6 +412,17 @@ class MethodExecutor:
         if errors_pg is not None:
             result.errors["pg"] = errors_pg
             result.estimates_final["PG"] = est_pg
+
+        # 全手法で t=0 の誤差を同じ初期値（S0=0）に揃える
+        baseline0 = compute_normalized_error(
+            np.zeros((self.N, self.N)),
+            S_series[0],
+            S_offline,
+            normalization=self.error_normalization,
+        )
+        for key in list(result.errors.keys()):
+            if result.errors[key]:
+                result.errors[key][0] = float(baseline0)
         
         return result
 

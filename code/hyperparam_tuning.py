@@ -32,6 +32,7 @@ from code.data_gen import (
 from models.pg_batch import ProximalGradientBatchSEM, ProximalGradientConfig
 from models.pp_exog import PPExogenousSEM
 from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
+from models.tvgti_pc.prediction_correction_sem_noexog import PredictionCorrectionSEMNoExog as PCSEMNoExog
 from numpy.random import Generator, SeedSequence
 from utils.formatting import clean_dict, coerce_bool, to_list_of_bools, to_list_of_ints, to_python_value
 from utils.io.results import backup_script, create_result_dir, save_json
@@ -309,28 +310,50 @@ def tune_methods_for_scenario(
         )
 
         offline_lambda_l1 = suggest_offline_lambda(trial) if error_normalization == "offline_solution" else None
+        burn_in_cfg = int(getattr(cfg.metric, "burn_in", 0))
+        burn_in = (r_suggested + q_suggested - 2) if burn_in_cfg == -1 else max(0, burn_in_cfg)
+        comp = getattr(cfg, "comparison", None)
+        pp_lookahead_cfg = 0 if comp is None else int(getattr(comp, "pp_lookahead", 0))
+        pp_lookahead = (r_suggested + q_suggested - 2) if pp_lookahead_cfg == -1 else max(0, pp_lookahead_cfg)
 
         errs = []
         for run_idx in range(tuning_runs_per_trial):
             rng = make_rng("pp", trial.number, run_idx)
-            S_ser, _, U_gen, Y_gen = generator(rng=rng, **generator_kwargs)
+            S_ser, T_mat, U_gen, Y_gen = generator(rng=rng, **generator_kwargs)
+            # チューニングは全手法で同じ打ち切り horizon と評価区間を使う
+            X = Y_gen[:, :T_tune]
+            U = U_gen[:, :T_tune]
+            S_trunc = S_ser[:T_tune]
             S0 = np.zeros((N, N))
-            b0 = np.ones(N)
+            # 比較条件（初期化）を cfg に合わせる
+            pp_b0_mode = str(getattr(getattr(cfg, "comparison", object()), "pp_init_b0", "ones")).strip()
+            b0 = np.diag(T_mat) if pp_b0_mode == "true_T_diag" else np.ones(N)
             model = PPExogenousSEM(
                 N, S0, b0,
                 r=r_suggested, q=q_suggested, rho=rho_suggested,
-                mu_lambda=mu_lambda_suggested, lambda_S=lambda_S_suggested
+                mu_lambda=mu_lambda_suggested, lambda_S=lambda_S_suggested,
+                lookahead=int(pp_lookahead),
             )
-            S_hat_list, _ = model.run(Y_gen, U_gen)
+            S_hat_list, _ = model.run(X, U)
 
             S_offline = None
             if error_normalization == "offline_solution":
-                S_offline = solve_offline_sem_lasso_batch(Y_gen, U_gen, offline_lambda_l1)
+                S_offline = solve_offline_sem_lasso_batch(X, U, offline_lambda_l1)
 
-            err = _compute_error_for_tuning(S_hat_list[-1], S_ser[-1], S_offline)
-            if not np.isfinite(err):
-                err = penalty_value
-            errs.append(err)
+            # PPだけ最終時刻評価になっていたため、PC/CO/SGDと同様に
+            # 「時系列平均（burn-in以降）」で最適化する
+            try:
+                err_ts = [
+                    _compute_error_for_tuning(S_hat_list[t], S_trunc[t], S_offline)
+                    for t in range(len(S_trunc))
+                ]
+                err_ts_eval = err_ts[burn_in:] if burn_in < len(err_ts) else err_ts
+                mean_err = float(np.mean(err_ts_eval)) if err_ts_eval else penalty_value
+                if not np.isfinite(mean_err):
+                    mean_err = penalty_value
+                errs.append(mean_err)
+            except Exception:
+                errs.append(penalty_value)
         return float(np.mean(errs))
 
     def objective_pc(trial: optuna.trial.Trial) -> float:
@@ -344,6 +367,12 @@ def tune_methods_for_scenario(
         C_suggested = _suggest_from_space(trial, "C", _resolve_param_space(search_spaces, "pc", "C"))
 
         offline_lambda_l1 = suggest_offline_lambda(trial) if error_normalization == "offline_solution" else None
+        burn_in_cfg = int(getattr(cfg.metric, "burn_in", 0))
+        # burn-in は PP の特性に合わせる（cfgで統一）
+        if burn_in_cfg == -1:
+            burn_in = int(best["pp"].get("r", default_fallback["pp"]["r"])) + int(best["pp"].get("q", default_fallback["pp"]["q"])) - 2
+        else:
+            burn_in = max(0, burn_in_cfg)
 
         errs = []
         for run_idx in range(tuning_runs_per_trial):
@@ -353,28 +382,51 @@ def tune_methods_for_scenario(
             Z = Z_gen[:, :T_tune]
             S_trunc = S_ser[:T_tune]
             S0_pc = np.zeros((N, N))
+            comp = getattr(cfg, "comparison", None)
+            pc_model = "exog" if comp is None else str(getattr(comp, "pc_model", "exog")).strip()
+            if comp is not None and not bool(getattr(comp, "pc_use_true_T_init", True)):
+                scale = float(getattr(comp, "pc_T_init_identity_scale", 1.0))
+                T_init = np.eye(N) * scale
+            else:
+                T_init = T_mat
 
             S_offline = None
             if error_normalization == "offline_solution":
                 S_offline = solve_offline_sem_lasso_batch(X, Z, offline_lambda_l1)
 
             try:
-                pc = PCSEM(
-                    N,
-                    S0_pc,
-                    lambda_reg_suggested,
-                    alpha_suggested,
-                    beta_suggested,
-                    gamma_suggested,
-                    P_suggested,
-                    C_suggested,
-                    show_progress=False,
-                    name="pc_baseline",
-                    T_init=T_mat,
-                )
-                estimates_pc, _ = pc.run(X, Z)
+                if pc_model == "noexog":
+                    pc = PCSEMNoExog(
+                        N,
+                        S0_pc,
+                        lambda_reg_suggested,
+                        alpha_suggested,
+                        beta_suggested,
+                        gamma_suggested,
+                        P_suggested,
+                        C_suggested,
+                        show_progress=False,
+                        name="pc_noexog",
+                    )
+                    estimates_pc, _ = pc.run(X, Z=None)
+                else:
+                    pc = PCSEM(
+                        N,
+                        S0_pc,
+                        lambda_reg_suggested,
+                        alpha_suggested,
+                        beta_suggested,
+                        gamma_suggested,
+                        P_suggested,
+                        C_suggested,
+                        show_progress=False,
+                        name="pc_baseline",
+                        T_init=T_init,
+                    )
+                    estimates_pc, _ = pc.run(X, Z)
                 err_ts = [_compute_error_for_tuning(estimates_pc[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
-                mean_err = float(np.mean(err_ts))
+                err_ts_eval = err_ts[burn_in:] if burn_in < len(err_ts) else err_ts
+                mean_err = float(np.mean(err_ts_eval)) if err_ts_eval else penalty_value
                 if not np.isfinite(mean_err):
                     mean_err = penalty_value
                 errs.append(mean_err)
@@ -396,6 +448,11 @@ def tune_methods_for_scenario(
         C_suggested = _suggest_from_space(trial, "C", _resolve_param_space(search_spaces, "co", "C"))
 
         offline_lambda_l1 = suggest_offline_lambda(trial) if error_normalization == "offline_solution" else None
+        burn_in_cfg = int(getattr(cfg.metric, "burn_in", 0))
+        if burn_in_cfg == -1:
+            burn_in = int(best["pp"].get("r", default_fallback["pp"]["r"])) + int(best["pp"].get("q", default_fallback["pp"]["q"])) - 2
+        else:
+            burn_in = max(0, burn_in_cfg)
 
         errs = []
         for run_idx in range(tuning_runs_per_trial):
@@ -405,6 +462,13 @@ def tune_methods_for_scenario(
             Z = Z_gen[:, :T_tune]
             S_trunc = S_ser[:T_tune]
             S0_pc = np.zeros((N, N))
+            comp = getattr(cfg, "comparison", None)
+            pc_model = "exog" if comp is None else str(getattr(comp, "pc_model", "exog")).strip()
+            if comp is not None and not bool(getattr(comp, "pc_use_true_T_init", True)):
+                scale = float(getattr(comp, "pc_T_init_identity_scale", 1.0))
+                T_init = np.eye(N) * scale
+            else:
+                T_init = T_mat
             snapshot = snapshot_pc_params()
             lambda_reg = float(snapshot.get("lambda_reg", default_fallback["pc"]["lambda_reg"]))
             if alpha_suggested is not None:
@@ -418,22 +482,38 @@ def tune_methods_for_scenario(
                 S_offline = solve_offline_sem_lasso_batch(X, Z, offline_lambda_l1)
 
             try:
-                co = PCSEM(
-                    N,
-                    S0_pc,
-                    lambda_reg,
-                    alpha,
-                    beta_co_suggested,
-                    gamma_suggested,
-                    P,
-                    C_suggested,
-                    show_progress=False,
-                    name="co_baseline",
-                    T_init=T_mat,
-                )
-                estimates_co, _ = co.run(X, Z)
+                if pc_model == "noexog":
+                    co = PCSEMNoExog(
+                        N,
+                        S0_pc,
+                        lambda_reg,
+                        alpha,
+                        beta_co_suggested,
+                        gamma_suggested,
+                        P,
+                        C_suggested,
+                        show_progress=False,
+                        name="co_noexog",
+                    )
+                    estimates_co, _ = co.run(X, Z=None)
+                else:
+                    co = PCSEM(
+                        N,
+                        S0_pc,
+                        lambda_reg,
+                        alpha,
+                        beta_co_suggested,
+                        gamma_suggested,
+                        P,
+                        C_suggested,
+                        show_progress=False,
+                        name="co_baseline",
+                        T_init=T_init,
+                    )
+                    estimates_co, _ = co.run(X, Z)
                 err_ts = [_compute_error_for_tuning(estimates_co[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
-                mean_err = float(np.mean(err_ts))
+                err_ts_eval = err_ts[burn_in:] if burn_in < len(err_ts) else err_ts
+                mean_err = float(np.mean(err_ts_eval)) if err_ts_eval else penalty_value
                 if not np.isfinite(mean_err):
                     mean_err = penalty_value
                 errs.append(mean_err)
@@ -453,6 +533,11 @@ def tune_methods_for_scenario(
         )
 
         offline_lambda_l1 = suggest_offline_lambda(trial) if error_normalization == "offline_solution" else None
+        burn_in_cfg = int(getattr(cfg.metric, "burn_in", 0))
+        if burn_in_cfg == -1:
+            burn_in = int(best["pp"].get("r", default_fallback["pp"]["r"])) + int(best["pp"].get("q", default_fallback["pp"]["q"])) - 2
+        else:
+            burn_in = max(0, burn_in_cfg)
 
         errs = []
         for run_idx in range(tuning_runs_per_trial):
@@ -462,6 +547,13 @@ def tune_methods_for_scenario(
             Z = Z_gen[:, :T_tune]
             S_trunc = S_ser[:T_tune]
             S0_pc = np.zeros((N, N))
+            comp = getattr(cfg, "comparison", None)
+            pc_model = "exog" if comp is None else str(getattr(comp, "pc_model", "exog")).strip()
+            if comp is not None and not bool(getattr(comp, "pc_use_true_T_init", True)):
+                scale = float(getattr(comp, "pc_T_init_identity_scale", 1.0))
+                T_init = np.eye(N) * scale
+            else:
+                T_init = T_mat
             snapshot = snapshot_pc_params()
             lambda_reg = float(snapshot.get("lambda_reg", default_fallback["pc"]["lambda_reg"]))
             if alpha_suggested is not None:
@@ -477,22 +569,38 @@ def tune_methods_for_scenario(
                 S_offline = solve_offline_sem_lasso_batch(X, Z, offline_lambda_l1)
 
             try:
-                sgd = PCSEM(
-                    N,
-                    S0_pc,
-                    lambda_reg,
-                    alpha,
-                    beta_sgd_suggested,
-                    gamma,
-                    P,
-                    C,
-                    show_progress=False,
-                    name="sgd_baseline",
-                    T_init=T_mat,
-                )
-                estimates_sgd, _ = sgd.run(X, Z)
+                if pc_model == "noexog":
+                    sgd = PCSEMNoExog(
+                        N,
+                        S0_pc,
+                        lambda_reg,
+                        alpha,
+                        beta_sgd_suggested,
+                        gamma,
+                        P,
+                        C,
+                        show_progress=False,
+                        name="sgd_noexog",
+                    )
+                    estimates_sgd, _ = sgd.run(X, Z=None)
+                else:
+                    sgd = PCSEM(
+                        N,
+                        S0_pc,
+                        lambda_reg,
+                        alpha,
+                        beta_sgd_suggested,
+                        gamma,
+                        P,
+                        C,
+                        show_progress=False,
+                        name="sgd_baseline",
+                        T_init=T_init,
+                    )
+                    estimates_sgd, _ = sgd.run(X, Z)
                 err_ts = [_compute_error_for_tuning(estimates_sgd[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
-                mean_err = float(np.mean(err_ts))
+                err_ts_eval = err_ts[burn_in:] if burn_in < len(err_ts) else err_ts
+                mean_err = float(np.mean(err_ts_eval)) if err_ts_eval else penalty_value
                 if not np.isfinite(mean_err):
                     mean_err = penalty_value
                 errs.append(mean_err)
