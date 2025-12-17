@@ -82,12 +82,14 @@ class MethodExecutor:
         hyperparams: ResolvedHyperparams,
         error_normalization: str = "true_value",
         comparison: Optional[ComparisonParams] = None,
+        divide_by_n2: bool = False,
     ):
         self.N = N
         self.flags = flags
         self.hp = hyperparams
         self.error_normalization = error_normalization
         self.comparison = comparison if comparison is not None else ComparisonParams()
+        self.divide_by_n2 = bool(divide_by_n2)
         
         # PC法の初期行列
         self._S0_pc = np.zeros((N, N))
@@ -142,7 +144,11 @@ class MethodExecutor:
         S_hat_list, _ = model.run(Y, U)
         
         errors = compute_error_series(
-            S_hat_list, S_series, S_offline, self.error_normalization
+            S_hat_list,
+            S_series,
+            S_offline,
+            self.error_normalization,
+            self.divide_by_n2,
         )
         return errors, S_hat_list[-1]
     
@@ -197,7 +203,7 @@ class MethodExecutor:
             estimates_pc, _ = pc.run(X, Z)
         
         errors = compute_error_series(
-            estimates_pc, S_series, S_offline, self.error_normalization
+            estimates_pc, S_series, S_offline, self.error_normalization, self.divide_by_n2
         )
         return errors, estimates_pc[-1]
     
@@ -252,7 +258,7 @@ class MethodExecutor:
             estimates_co, _ = co.run(X, Z)
         
         errors = compute_error_series(
-            estimates_co, S_series, S_offline, self.error_normalization
+            estimates_co, S_series, S_offline, self.error_normalization, self.divide_by_n2
         )
         return errors, estimates_co[-1]
     
@@ -307,7 +313,7 @@ class MethodExecutor:
             estimates_sgd, _ = sgd.run(X, Z)
         
         errors = compute_error_series(
-            estimates_sgd, S_series, S_offline, self.error_normalization
+            estimates_sgd, S_series, S_offline, self.error_normalization, self.divide_by_n2
         )
         return errors, estimates_sgd[-1]
     
@@ -344,7 +350,7 @@ class MethodExecutor:
         estimates_pg, _ = pg_model.run(X, Z)
         
         errors = compute_error_series(
-            estimates_pg, S_series, S_offline, self.error_normalization
+            estimates_pg, S_series, S_offline, self.error_normalization, self.divide_by_n2
         )
         return errors, estimates_pg[-1]
     
@@ -419,6 +425,7 @@ class MethodExecutor:
             S_series[0],
             S_offline,
             normalization=self.error_normalization,
+            divide_by_n2=self.divide_by_n2,
         )
         for key in list(result.errors.keys()):
             if result.errors[key]:

@@ -29,9 +29,12 @@ from code.data_gen import generate_piecewise_X_with_exog
 from models.pp_exog import PPExogenousSEM
 from models.pg_batch import ProximalGradientBatchSEM, ProximalGradientConfig
 from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
+from models.tvgti_pc.prediction_correction_sem_noexog import PredictionCorrectionSEMNoExog as PCSEMNoExog
 from utils.io.plotting import apply_style, plot_heatmaps, plot_heatmaps_suite
 from utils.io.results import backup_script, create_result_dir, make_result_filename, save_json
 from utils.offline_solver import solve_offline_sem_lasso_batch
+from utils.metrics import compute_error_series
+from utils.metrics import compute_normalized_error
 
 
 def _fmt(value: object) -> str:
@@ -93,12 +96,23 @@ def print_piecewise_summary(
     
     metric_items: Dict[str, object] = {
         "error_normalization": cfg.metric.error_normalization,
+        "burn_in": getattr(cfg.metric, "burn_in", 0),
     }
     if cfg.metric.error_normalization == "offline_solution":
         # offline_lambda_l1 はハイパラJSONまたは探索範囲から取得
         offline_space = cfg.search_spaces.offline.offline_lambda_l1
         metric_items["offline_lambda_l1 (range)"] = f"[{offline_space.low}, {offline_space.high}]"
     _print_block("Metric Settings", metric_items)
+
+    # 比較条件
+    comp = getattr(cfg, "comparison", None)
+    if comp is not None:
+        _print_block("Comparison Settings", {
+            "pc_use_true_T_init": getattr(comp, "pc_use_true_T_init", True),
+            "pc_T_init_identity_scale": getattr(comp, "pc_T_init_identity_scale", 1.0),
+            "pp_init_b0": getattr(comp, "pp_init_b0", "ones"),
+            "pp_lookahead": getattr(comp, "pp_lookahead", 0),
+        })
     
     for method_key, params in hyperparams.items():
         label = f"{method_key.upper()} Hyperparams"
@@ -240,6 +254,7 @@ def main() -> None:
     
     # 評価指標の設定
     error_normalization = cfg.metric.error_normalization
+    burn_in_cfg = int(getattr(cfg.metric, "burn_in", 0))
     
     # offline_lambda_l1 の取得（ハイパラJSONから読み込むか、探索範囲の幾何平均を使用）
     offline_lambda_l1 = None
@@ -252,15 +267,27 @@ def main() -> None:
             import math
             offline_lambda_l1 = math.sqrt(offline_space.low * offline_space.high)
     
-    def compute_error(S_hat: np.ndarray, S_true: np.ndarray, S_offline: Optional[np.ndarray], eps: float = 1e-12) -> float:
-        """誤差を計算（正規化方法に応じて分母を変更）"""
-        if error_normalization == "offline_solution" and S_offline is not None:
-            numerator = np.linalg.norm(S_hat - S_offline) ** 2
-            denominator = np.linalg.norm(S_offline) ** 2 + eps
-        else:
-            numerator = np.linalg.norm(S_hat - S_true) ** 2
-            denominator = np.linalg.norm(S_true) ** 2 + eps
-        return numerator / denominator
+    # burn-in（序盤の“データ不足”区間を除外して平均を見る）
+    if burn_in_cfg == -1:
+        burn_in = int(r) + int(q) - 2
+    else:
+        burn_in = max(0, int(burn_in_cfg))
+
+    comp = getattr(cfg, "comparison", None)
+    pc_model = "exog" if comp is None else str(getattr(comp, "pc_model", "exog")).strip()
+    pc_use_true_T = True if comp is None else bool(getattr(comp, "pc_use_true_T_init", True))
+    pc_T_scale = 1.0 if comp is None else float(getattr(comp, "pc_T_init_identity_scale", 1.0))
+    pp_init_b0_mode = "ones" if comp is None else str(getattr(comp, "pp_init_b0", "ones")).strip()
+    pp_lookahead_cfg = 0 if comp is None else int(getattr(comp, "pp_lookahead", 0))
+    pp_lookahead = (int(r) + int(q) - 2) if pp_lookahead_cfg == -1 else max(0, int(pp_lookahead_cfg))
+
+    def _pc_T_init(T_true: np.ndarray) -> np.ndarray:
+        return T_true if pc_use_true_T else (np.eye(N) * pc_T_scale)
+
+    def _pp_b0(T_true: np.ndarray) -> np.ndarray:
+        if pp_init_b0_mode == "true_T_diag":
+            return np.diag(T_true)
+        return np.ones(N)
     
     def run_trial(trial_seed: int):
         rng = np.random.default_rng(trial_seed)
@@ -288,55 +315,68 @@ def main() -> None:
         
         if run_pp_flag:
             S0 = np.zeros((N, N))
-            b0 = np.ones(N)
-            model = PPExogenousSEM(N, S0, b0, r=r, q=q, rho=rho, mu_lambda=mu_lambda, lambda_S=lambda_S)
+            b0 = _pp_b0(B_true)
+            model = PPExogenousSEM(
+                N, S0, b0,
+                r=r, q=q, rho=rho, mu_lambda=mu_lambda, lambda_S=lambda_S,
+                lookahead=pp_lookahead,
+            )
             S_hat_list, _ = model.run(Y, U)
-            error_pp = [
-                compute_error(S_hat_list[t], S_series[t], S_offline)
-                for t in range(T)
-            ]
+            error_pp = compute_error_series(S_hat_list, S_series, S_offline, error_normalization)
             errors['pp'] = error_pp
             estimates_final['PP'] = S_hat_list[-1]
         
         if run_pc_flag:
             X = Y
-            pc = PCSEM(
-                N, S0_pc, lambda_reg, alpha, beta, gamma, P, C,
-                show_progress=False, name="pc_baseline", T_init=B_true,
-            )
-            estimates_pc, _ = pc.run(X, U)
-            error_pc = [
-                compute_error(estimates_pc[t], S_series[t], S_offline)
-                for t in range(T)
-            ]
+            if pc_model == "noexog":
+                pc = PCSEMNoExog(
+                    N, S0_pc, lambda_reg, alpha, beta, gamma, P, C,
+                    show_progress=False, name="pc_noexog",
+                )
+                estimates_pc, _ = pc.run(X, Z=None)
+            else:
+                pc = PCSEM(
+                    N, S0_pc, lambda_reg, alpha, beta, gamma, P, C,
+                    show_progress=False, name="pc_baseline", T_init=_pc_T_init(B_true),
+                )
+                estimates_pc, _ = pc.run(X, U)
+            error_pc = compute_error_series(estimates_pc, S_series, S_offline, error_normalization)
             errors['pc'] = error_pc
             estimates_final['PC'] = estimates_pc[-1]
         
         if run_co_flag:
             X = Y
-            co = PCSEM(
-                N, S0_pc, lambda_reg, alpha, beta_co, gamma, 0, C,
-                show_progress=False, name="co_baseline", T_init=B_true,
-            )
-            estimates_co, _ = co.run(X, U)
-            error_co = [
-                compute_error(estimates_co[t], S_series[t], S_offline)
-                for t in range(T)
-            ]
+            if pc_model == "noexog":
+                co = PCSEMNoExog(
+                    N, S0_pc, lambda_reg, alpha, beta_co, gamma, 0, C,
+                    show_progress=False, name="co_noexog",
+                )
+                estimates_co, _ = co.run(X, Z=None)
+            else:
+                co = PCSEM(
+                    N, S0_pc, lambda_reg, alpha, beta_co, gamma, 0, C,
+                    show_progress=False, name="co_baseline", T_init=_pc_T_init(B_true),
+                )
+                estimates_co, _ = co.run(X, U)
+            error_co = compute_error_series(estimates_co, S_series, S_offline, error_normalization)
             errors['co'] = error_co
             estimates_final['CO'] = estimates_co[-1]
         
         if run_sgd_flag:
             X = Y
-            sgd = PCSEM(
-                N, S0_pc, sgd_lambda_reg, sgd_alpha, beta_sgd, 0.0, 0, C,
-                show_progress=False, name="sgd_baseline", T_init=B_true,
-            )
-            estimates_sgd, _ = sgd.run(X, U)
-            error_sgd = [
-                compute_error(estimates_sgd[t], S_series[t], S_offline)
-                for t in range(T)
-            ]
+            if pc_model == "noexog":
+                sgd = PCSEMNoExog(
+                    N, S0_pc, sgd_lambda_reg, sgd_alpha, beta_sgd, 0.0, 0, C,
+                    show_progress=False, name="sgd_noexog",
+                )
+                estimates_sgd, _ = sgd.run(X, Z=None)
+            else:
+                sgd = PCSEM(
+                    N, S0_pc, sgd_lambda_reg, sgd_alpha, beta_sgd, 0.0, 0, C,
+                    show_progress=False, name="sgd_baseline", T_init=_pc_T_init(B_true),
+                )
+                estimates_sgd, _ = sgd.run(X, U)
+            error_sgd = compute_error_series(estimates_sgd, S_series, S_offline, error_normalization)
             errors['sgd'] = error_sgd
             estimates_final['SGD'] = estimates_sgd[-1]
         
@@ -361,6 +401,17 @@ def main() -> None:
             ]
             errors['pg'] = error_pg
             estimates_final['PG'] = estimates_pg[-1]
+
+        # 全手法で t=0 の誤差を同じ初期値（S0=0）に揃える
+        baseline0 = compute_normalized_error(
+            np.zeros((N, N)),
+            S_series[0],
+            S_offline,
+            normalization=error_normalization,
+        )
+        for k in list(errors.keys()):
+            if errors[k]:
+                errors[k][0] = float(baseline0)
         
         return errors, estimates_final
     
@@ -395,6 +446,32 @@ def main() -> None:
     error_co_mean = error_co_total / num_trials if run_co_flag else None
     error_sgd_mean = error_sgd_total / num_trials if run_sgd_flag else None
     error_pg_mean = error_pg_total / num_trials if run_pg_flag else None
+
+    def _mean_after_burnin(arr: Optional[np.ndarray]) -> Optional[float]:
+        if arr is None:
+            return None
+        if burn_in <= 0:
+            return float(np.mean(arr))
+        if burn_in >= len(arr):
+            return None
+        return float(np.mean(arr[burn_in:]))
+
+    summary_means = {
+        "full_mean": {
+            "pp": float(np.mean(error_pp_mean)) if run_pp_flag else None,
+            "pc": float(np.mean(error_pc_mean)) if run_pc_flag else None,
+            "co": float(np.mean(error_co_mean)) if run_co_flag else None,
+            "sgd": float(np.mean(error_sgd_mean)) if run_sgd_flag else None,
+            "pg": float(np.mean(error_pg_mean)) if run_pg_flag else None,
+        },
+        "post_burnin_mean": {
+            "pp": _mean_after_burnin(error_pp_mean),
+            "pc": _mean_after_burnin(error_pc_mean),
+            "co": _mean_after_burnin(error_co_mean),
+            "sgd": _mean_after_burnin(error_sgd_mean),
+            "pg": _mean_after_burnin(error_pg_mean),
+        },
+    }
     
     plt.figure(figsize=(10, 6))
     if run_co_flag:
@@ -407,11 +484,13 @@ def main() -> None:
         plt.plot(error_pg_mean, color='magenta', label='ProxGrad')
     if run_pp_flag:
         plt.plot(error_pp_mean, color='red', label='Proposed (PP)')
+    if burn_in > 0:
+        plt.axvline(burn_in, color="black", linestyle="--", linewidth=1.0, alpha=0.6, label=f"burn-in={burn_in}")
     plt.yscale('log')
     plt.xlim(left=0, right=T)
     plt.xlabel('t')
     if error_normalization == "offline_solution":
-        plt.ylabel(r'Average $\frac{\|\hat{S} - S_{\mathrm{offline}}\|_F^2}{\|S_{\mathrm{offline}}\|_F^2}$')
+        plt.ylabel(r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^* - S_{\mathrm{offline}}\|_F^2}$')
     else:
         plt.ylabel(r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^*\|_F^2}$')
     plt.grid(True, which='both')
@@ -432,6 +511,34 @@ def main() -> None:
     plt.tight_layout()
     plt.savefig(str(Path(result_dir) / filename), bbox_inches='tight')
     plt.show()
+
+    # burn-in 以降のみの図も保存（提案法の立ち上がり差を切り分ける）
+    burnin_filename = None
+    if burn_in > 0:
+        plt.figure(figsize=(10, 6))
+        if run_co_flag:
+            plt.plot(np.arange(burn_in, T), error_co_mean[burn_in:], color='blue', label='Correction Only')
+        if run_pc_flag:
+            plt.plot(np.arange(burn_in, T), error_pc_mean[burn_in:], color='limegreen', label='Prediction Correction')
+        if run_sgd_flag:
+            plt.plot(np.arange(burn_in, T), error_sgd_mean[burn_in:], color='cyan', label='SGD')
+        if run_pg_flag:
+            plt.plot(np.arange(burn_in, T), error_pg_mean[burn_in:], color='magenta', label='ProxGrad')
+        if run_pp_flag:
+            plt.plot(np.arange(burn_in, T), error_pp_mean[burn_in:], color='red', label='Proposed (PP)')
+        plt.yscale('log')
+        plt.xlim(left=burn_in, right=T)
+        plt.xlabel('t')
+        if error_normalization == "offline_solution":
+            plt.ylabel(r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^* - S_{\mathrm{offline}}\|_F^2}$')
+        else:
+            plt.ylabel(r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^*\|_F^2}$')
+        plt.grid(True, which='both')
+        plt.legend()
+        burnin_filename = filename.replace(".png", f"_burnin{burn_in}.png")
+        plt.tight_layout()
+        plt.savefig(str(Path(result_dir) / burnin_filename), bbox_inches='tight')
+        plt.show()
     
     # ヒートマップ表示（最後の試行の最終時刻）
     # 3種類のヒートマップを生成：全体、推定のみ、差分
@@ -481,6 +588,16 @@ def main() -> None:
         "metric": {
             "error_normalization": error_normalization,
             "offline_lambda_l1": offline_lambda_l1,
+            "burn_in": burn_in_cfg,
+            "burn_in_effective": burn_in,
+        },
+        "comparison": {
+            "pc_model": pc_model,
+            "pc_use_true_T_init": pc_use_true_T,
+            "pc_T_init_identity_scale": pc_T_scale,
+            "pp_init_b0": pp_init_b0_mode,
+            "pp_lookahead": pp_lookahead_cfg,
+            "pp_lookahead_effective": pp_lookahead,
         },
         "methods": {
             "pp": {"enabled": run_pp_flag, "hyperparams": {"r": r, "q": q, "rho": rho, "mu_lambda": mu_lambda, "lambda_S": lambda_S}},
@@ -508,6 +625,9 @@ def main() -> None:
         "results": {
             "figure": filename,
             "figure_path": str(Path(result_dir) / filename),
+            "figure_burnin": burnin_filename,
+            "figure_burnin_path": str(Path(result_dir) / burnin_filename) if burnin_filename else None,
+            "summary_means": summary_means,
             "metrics": {
                 "pp": error_pp_mean.tolist() if run_pp_flag else None,
                 "pc": error_pc_mean.tolist() if run_pc_flag else None,

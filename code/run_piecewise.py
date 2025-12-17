@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import subprocess
 import sys
 from datetime import datetime
 from pathlib import Path
@@ -24,7 +25,7 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 from tqdm_joblib import tqdm_joblib
 
-from code.config import get_config, get_default_hyperparams_dict, print_config_summary
+from code.config import get_config, get_default_hyperparams_dict, print_config_summary, config_to_dict
 from code.data_gen import generate_piecewise_X_with_exog
 from models.pp_exog import PPExogenousSEM
 from models.pg_batch import ProximalGradientBatchSEM, ProximalGradientConfig
@@ -36,6 +37,27 @@ from utils.offline_solver import solve_offline_sem_lasso_batch
 from utils.metrics import compute_error_series
 from utils.metrics import compute_normalized_error
 
+
+def _get_git_info(repo_root: Path) -> Dict[str, object]:
+    """
+    再現性のために git の状態をメタに埋める。
+    （gitが無い/失敗しても実行は継続する）
+    """
+    def _run(args: list[str]) -> Optional[str]:
+        try:
+            out = subprocess.check_output(args, cwd=str(repo_root), stderr=subprocess.DEVNULL)
+            return out.decode("utf-8", errors="replace").strip()
+        except Exception:
+            return None
+
+    head = _run(["git", "rev-parse", "HEAD"])
+    branch = _run(["git", "rev-parse", "--abbrev-ref", "HEAD"])
+    dirty = _run(["git", "status", "--porcelain"])
+    return {
+        "head": head,
+        "branch": branch,
+        "is_dirty": bool(dirty),
+    }
 
 def _fmt(value: object) -> str:
     if value is None:
@@ -255,6 +277,7 @@ def main() -> None:
     # 評価指標の設定
     error_normalization = cfg.metric.error_normalization
     burn_in_cfg = int(getattr(cfg.metric, "burn_in", 0))
+    divide_by_n2 = bool(getattr(cfg.metric, "divide_by_n2", False))
     
     # offline_lambda_l1 の取得（ハイパラJSONから読み込むか、探索範囲の幾何平均を使用）
     offline_lambda_l1 = None
@@ -322,7 +345,7 @@ def main() -> None:
                 lookahead=pp_lookahead,
             )
             S_hat_list, _ = model.run(Y, U)
-            error_pp = compute_error_series(S_hat_list, S_series, S_offline, error_normalization)
+            error_pp = compute_error_series(S_hat_list, S_series, S_offline, error_normalization, divide_by_n2)
             errors['pp'] = error_pp
             estimates_final['PP'] = S_hat_list[-1]
         
@@ -340,7 +363,7 @@ def main() -> None:
                     show_progress=False, name="pc_baseline", T_init=_pc_T_init(B_true),
                 )
                 estimates_pc, _ = pc.run(X, U)
-            error_pc = compute_error_series(estimates_pc, S_series, S_offline, error_normalization)
+            error_pc = compute_error_series(estimates_pc, S_series, S_offline, error_normalization, divide_by_n2)
             errors['pc'] = error_pc
             estimates_final['PC'] = estimates_pc[-1]
         
@@ -358,7 +381,7 @@ def main() -> None:
                     show_progress=False, name="co_baseline", T_init=_pc_T_init(B_true),
                 )
                 estimates_co, _ = co.run(X, U)
-            error_co = compute_error_series(estimates_co, S_series, S_offline, error_normalization)
+            error_co = compute_error_series(estimates_co, S_series, S_offline, error_normalization, divide_by_n2)
             errors['co'] = error_co
             estimates_final['CO'] = estimates_co[-1]
         
@@ -376,7 +399,7 @@ def main() -> None:
                     show_progress=False, name="sgd_baseline", T_init=_pc_T_init(B_true),
                 )
                 estimates_sgd, _ = sgd.run(X, U)
-            error_sgd = compute_error_series(estimates_sgd, S_series, S_offline, error_normalization)
+            error_sgd = compute_error_series(estimates_sgd, S_series, S_offline, error_normalization, divide_by_n2)
             errors['sgd'] = error_sgd
             estimates_final['SGD'] = estimates_sgd[-1]
         
@@ -408,6 +431,7 @@ def main() -> None:
             S_series[0],
             S_offline,
             normalization=error_normalization,
+            divide_by_n2=divide_by_n2,
         )
         for k in list(errors.keys()):
             if errors[k]:
@@ -484,15 +508,16 @@ def main() -> None:
         plt.plot(error_pg_mean, color='magenta', label='ProxGrad')
     if run_pp_flag:
         plt.plot(error_pp_mean, color='red', label='Proposed (PP)')
-    if burn_in > 0:
-        plt.axvline(burn_in, color="black", linestyle="--", linewidth=1.0, alpha=0.6, label=f"burn-in={burn_in}")
     plt.yscale('log')
     plt.xlim(left=0, right=T)
     plt.xlabel('t')
     if error_normalization == "offline_solution":
-        plt.ylabel(r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^* - S_{\mathrm{offline}}\|_F^2}$')
+        ylabel = r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^* - S_{\mathrm{offline}}\|_F^2}$'
     else:
-        plt.ylabel(r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^*\|_F^2}$')
+        ylabel = r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^*\|_F^2}$'
+    if divide_by_n2:
+        ylabel = ylabel + r'\,$/\,N^2$'
+    plt.ylabel(ylabel)
     plt.grid(True, which='both')
     plt.legend()
     
@@ -530,9 +555,12 @@ def main() -> None:
         plt.xlim(left=burn_in, right=T)
         plt.xlabel('t')
         if error_normalization == "offline_solution":
-            plt.ylabel(r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^* - S_{\mathrm{offline}}\|_F^2}$')
+            ylabel_b = r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^* - S_{\mathrm{offline}}\|_F^2}$'
         else:
-            plt.ylabel(r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^*\|_F^2}$')
+            ylabel_b = r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^*\|_F^2}$'
+        if divide_by_n2:
+            ylabel_b = ylabel_b + r'\,$/\,N^2$'
+        plt.ylabel(ylabel_b)
         plt.grid(True, which='both')
         plt.legend()
         burnin_filename = filename.replace(".png", f"_burnin{burn_in}.png")
@@ -578,6 +606,12 @@ def main() -> None:
     metadata = {
         "created_at": run_started_at.isoformat(),
         "command": sys.argv,
+        "repro": {
+            # 実験の再現に必要な“環境側”情報
+            "git": _get_git_info(Path(__file__).resolve().parents[1]),
+            # 与えたハイパラJSONの中身（パスが移動しても再現できるように）
+            "hyperparam_json_content": loaded_hyperparams,
+        },
         "config": {
             "num_trials": num_trials,
             "seed_base": seed,
@@ -585,11 +619,14 @@ def main() -> None:
             "N": N, "T": T, "sparsity": sparsity,
             "max_weight": max_weight, "std_e": std_e, "K": K,
         },
+        # config.py の全設定スナップショット（CONFIG_MAIN/TEST の全フィールド）
+        "config_full": config_to_dict(cfg),
         "metric": {
             "error_normalization": error_normalization,
             "offline_lambda_l1": offline_lambda_l1,
             "burn_in": burn_in_cfg,
             "burn_in_effective": burn_in,
+            "divide_by_n2": divide_by_n2,
         },
         "comparison": {
             "pc_model": pc_model,

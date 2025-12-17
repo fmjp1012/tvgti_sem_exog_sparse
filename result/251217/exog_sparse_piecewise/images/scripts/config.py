@@ -225,6 +225,58 @@ class MetricParams:
     # "true_value": 真の値のノルムで割る（従来の方法）
     # "offline_solution": オフライン解のノルムで割る（offline_lambda_l1はOptunaで自動探索）
     error_normalization: str = "true_value"
+    # 時系列平均誤差を取る際に、先頭 burn_in ステップを無視する
+    # - 0: 無視しない
+    # - -1: 自動（PPの r,q から r+q-2 を使用）
+    #
+    # 目的:
+    # - PPは序盤、(1)窓長rがまだ揃わない / (2)並列ブロック数qが揃わない ため更新が弱く、
+    #   「序盤込みの平均」を取ると不利になりやすい。
+    # - burn_inで評価から序盤を外し、「立ち上がり後」の性能比較をしやすくする。
+    #
+    # 注意:
+    # - burn_in は “評価/可視化の集計” を変えるだけで、データ長Tやプロットの横軸範囲は変えない。
+    burn_in: int = 0
+
+
+# =============================================================================
+# 比較条件（公平性/見せ方）設定
+# =============================================================================
+@dataclass
+class ComparisonParams:
+    """手法間の比較条件を揃えるための設定"""
+    # PC系（PC/CO/SGD）が使うモデル
+    # - "exog": x = Sx + Tz + noise（従来）
+    # - "noexog": x = Sx + noise（Z/Tを一切使わない）
+    #   ※ "noexog" は提案法（PP）が外生を使う条件ではベースラインが不利になるので、
+    #      “提案法を良く見せる/条件を変える” 意図がある場合に使う。
+    pc_model: str = "exog"
+
+    # PC/CO/SGD に真の T を与えるか（Trueだとベースラインが有利になりがち）
+    # - True: PC側は外生係数を“既知”として扱える（ベースライン有利）
+    # - False: T_init を単位行列スケールで与える（Tを当てにしない/未知に近い条件）
+    pc_use_true_T_init: bool = True
+    # pc_use_true_T_init=False の場合に使う T_init（単位行列のスケール）
+    pc_T_init_identity_scale: float = 1.0
+
+    # PP の T 初期値 b0 の作り方
+    # - "ones": b0 = 1
+    # - "true_T_diag": b0 = diag(T_true)
+    #   ※ PPは [S|T] を同時に推定するので、b0 は “Tの初期値” に相当する。
+    pp_init_b0: str = "ones"
+
+    # PP の「序盤のデータ不足」を緩和するために、ウィンドウの右側に先読みデータを含める
+    # - 0: 先読みしない（オンライン）
+    # - -1: 自動（r+q-2 だけ先読みしてフル窓/フル並列が効くようにする）
+    #
+    # 何が起きるか:
+    # - PP内部で使うブロック窓が [t-r+1, t] から [t-r+1, t+lookahead] に広がる。
+    # - これにより tが小さい序盤でも“情報量のある窓”を作れて、更新が進みやすくなる。
+    #
+    # 注意（重要）:
+    # - lookahead>0 は未来データを使うため、厳密なオンライン条件ではない（チート/オフライン寄り）。
+    # - ただしプロットの横軸 t=0..T-1（データ長T）は変えない。
+    pp_lookahead: int = 0
 
 
 # =============================================================================
@@ -285,6 +337,9 @@ class SimulationConfig:
     
     # 評価指標設定
     metric: MetricParams = field(default_factory=MetricParams)
+
+    # 比較条件設定
+    comparison: ComparisonParams = field(default_factory=ComparisonParams)
     
     # 出力設定
     output: OutputParams = field(default_factory=OutputParams)
@@ -321,33 +376,36 @@ CONFIG_MAIN = SimulationConfig(
     
     # シナリオ共通パラメータ
     common=CommonParams(
-        N=20,
-        T=1000,  # テスト用に短くしています -> 本番パラメータ
-        sparsity=0.7,
-        max_weight=0.5,
-        std_e=0.05,
-        seed=3,
+        N=20,              # ノード数（行列Sは N×N）
+        T=1000,            # 時系列長（プロット横軸は t=0..T-1）
+        sparsity=0.7,      # スパース性（0要素の割合）
+        max_weight=0.5,    # Sの非ゼロ重みの上限（生成時）
+        std_e=0.05,        # 観測ノイズの標準偏差
+        seed=3,            # 乱数シード基点（trialごとにseed+i）
     ),
     
     # Piecewiseシナリオのパラメータ
     piecewise=PiecewiseParams(
-        K=1,
+        K=1,               # 区間数（S(t)が定値な区間の数。K=1ならSは全期間一定）
     ),
+
+    # Linearシナリオのパラメータ（現状パラメータなしだが明示）
+    linear=LinearParams(),
     
     # データ生成パラメータ
     data_gen=DataGenParams(
-        s_type="random",
-        t_min=0.5,
-        t_max=1.0,
-        z_dist="uniform01",
+        s_type="random",   # Sの生成方法（"random"/"regular" 等）
+        t_min=0.5,         # 外生係数T（対角）の最小値（生成時）
+        t_max=1.0,         # 外生係数T（対角）の最大値（生成時）
+        z_dist="uniform01",# 外生入力zの分布（生成時）
     ),
     
     # チューニング設定
     tuning=TuningParams(
-        tuning_trials=300,
-        tuning_runs_per_trial=1,
-        truncation_horizon=800,
-        tuning_seed=4,
+        tuning_trials=300,          # Optuna試行回数
+        tuning_runs_per_trial=1,    # 各試行の平均を取る回数
+        truncation_horizon=800,     # チューニング時に使う時系列長（X[:, :T_tune]）
+        tuning_seed=4,              # チューニング用seed
     ),
     
     # ハイパーパラメータ探索範囲
@@ -359,17 +417,18 @@ CONFIG_MAIN = SimulationConfig(
     # - choices: categorical型の場合の選択肢リスト
     search_spaces=SearchSpaces(
         pp=PPSearchSpace(
-            rho=SearchRange(low=1e-6, high=1e-1, log=True),
-            mu_lambda=SearchRange(low=1e-4, high=1.0, log=True),
-            lambda_S=SearchRange(low=1e-6, high=1e-1, log=True),
+            rho=SearchRange(low=1e-6, high=1e-1, log=True),          # レベル集合の閾値ρ（大きいほど制約が緩い）
+            # 理論上 μ_t ∈ (0, 2 M_t) を狙うため、μ_lambda は 1 付近〜2 まで探索する
+            mu_lambda=SearchRange(low=1e-2, high=2.0, log=True),     # 緩和係数スカラー（大きいほど更新が速い）
+            lambda_S=SearchRange(low=1e-6, high=1e-1, log=True),      # SブロックへのL1強度（スパース誘導）
         ),
         pc=PCSearchSpace(
-            lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True),
-            alpha=SearchRange(low=1e-6, high=1e+1, log=True),
-            beta_pc=SearchRange(low=1e-6, high=1e+1, log=True),
-            gamma=SearchRange(low=0.85, high=0.999, log=False),
-            P=SearchRange(low=1, high=1, log=False, type="int", step=1),
-            C=SearchRange(low=1, high=1, log=False, type="int", step=1),
+            lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True),   # L1正則化係数（PCの疎性）
+            alpha=SearchRange(low=1e-6, high=1e+1, log=True),         # PCのステップ（S側）
+            beta_pc=SearchRange(low=1e-6, high=1e+1, log=True),       # PCのステップ（補正側）
+            gamma=SearchRange(low=0.85, high=0.999, log=False),       # 忘却係数（共分散のEWMA）
+            P=SearchRange(low=1, high=1, log=False, type="int", step=1), # Prediction回数
+            C=SearchRange(low=1, high=1, log=False, type="int", step=1), # Correction回数
         ),
         co=COSearchSpace(
             alpha=SearchRange(low=1e-6, high=1e+1, log=True),
@@ -391,6 +450,40 @@ CONFIG_MAIN = SimulationConfig(
             offline_lambda_l1=SearchRange(low=1e-4, high=1e+1, log=True),
         ),
     ),
+
+    # デフォルトハイパーパラメータ（ハイパラJSON未指定時のフォールバック）
+    hyperparams=DefaultHyperparams(
+        pp=PPHyperparams(
+            r=50,            # PPの窓長（各ブロックが参照する過去長）
+            q=5,             # PPの並列ブロック数（t,t-1,... の個数）
+            rho=1e-3,        # PPのρ
+            mu_lambda=1.0,   # PPの緩和スカラー
+            lambda_S=1e-2,   # PPのL1強度（Sのみ）
+        ),
+        pc=PCHyperparams(
+            lambda_reg=1e-3, # PCのL1強度
+            alpha=1e-2,      # PCのステップ（S側）
+            beta=1e-2,       # PCのステップ（補正側）
+            gamma=0.95,      # 忘却係数
+            P=1,             # Prediction反復回数
+            C=1,             # Correction反復回数
+        ),
+        co=COHyperparams(
+            beta_co=1e-2,    # COのステップ（補正側のみ）
+        ),
+        sgd=SGDHyperparams(
+            beta_sgd=1e-2,   # SGDのステップ
+        ),
+        pg=PGHyperparams(
+            lambda_reg=1e-3,         # バッチPGのL1強度
+            step_scale=1.0,          # ステップスケール
+            step_size=None,          # 固定ステップ（Noneなら内部で決定）
+            use_fista=True,          # FISTAを使うか
+            use_backtracking=False,  # バックトラッキングを使うか
+            max_iter=500,            # 最大反復
+            tol=1e-4,                # 収束判定
+        ),
+    ),
     
     # 実行設定
     run=RunParams(
@@ -401,13 +494,29 @@ CONFIG_MAIN = SimulationConfig(
     # "true_value": 真の値のノルムで割る（従来の方法）
     # "offline_solution": オフライン解のノルムで割る（offline_lambda_l1はOptunaで自動探索）
     metric=MetricParams(
-        error_normalization="true_value",
+        error_normalization="true_value",  # 誤差の正規化方法（MetricParamsの説明参照）
         # error_normalization="offline_solution",
+        # PPは序盤の更新が弱く出やすいので、自動burn-inを推奨（r+q-2）
+        burn_in=-1,                        # -1なら burn_in=r+q-2（“立ち上がり”区間を評価から除外）
+    ),
+
+    # 比較条件（「提案法をよく見せる」設定例）
+    # - PCへ真のTを与えないことで、未知T推定という条件を揃える
+    # - PPは真のT対角でウォームスタート
+    comparison=ComparisonParams(
+        pc_model="noexog",                 # PC系のモデル（"noexog"だとZ/Tを使わない）
+        pc_use_true_T_init=False,          # PC系に真のTを渡すか（noexogでは基本使われない）
+        pc_T_init_identity_scale=1.0,      # pc_use_true_T_init=False のときの T_init=I*scale
+        pp_init_b0="true_T_diag",          # PPのT初期値（b0）
+        pp_lookahead=-1,                   # PPの先読み（-1なら r+q-2。未来データを使うためオンラインではない）
     ),
     
     # 出力設定
     output=OutputParams(
         result_root=Path("./result"),
+        subdir_piecewise="exog_sparse_piecewise",
+        subdir_linear="exog_sparse_linear",
+        subdir_tuning="exog_sparse_tuning",
     ),
     
     # 実行モード
@@ -443,6 +552,9 @@ CONFIG_TEST = SimulationConfig(
     piecewise=PiecewiseParams(
         K=2,  # 変化点の数（少なめ）
     ),
+
+    # Linearシナリオのパラメータ（現状パラメータなしだが明示）
+    linear=LinearParams(),
     
     # データ生成パラメータ
     data_gen=DataGenParams(
@@ -464,7 +576,8 @@ CONFIG_TEST = SimulationConfig(
     search_spaces=SearchSpaces(
         pp=PPSearchSpace(
             rho=SearchRange(low=1e-6, high=1e-1, log=True),
-            mu_lambda=SearchRange(low=1e-4, high=1.0, log=True),
+            # 理論上 μ_t ∈ (0, 2 M_t) を狙うため、μ_lambda は 1 付近〜2 まで探索する
+            mu_lambda=SearchRange(low=1e-2, high=2.0, log=True),
             lambda_S=SearchRange(low=1e-6, high=1e-1, log=True),
         ),
         pc=PCSearchSpace(
@@ -504,6 +617,16 @@ CONFIG_TEST = SimulationConfig(
     metric=MetricParams(
         # error_normalization="true_value",  # テストではシンプルな方法で
         error_normalization="offline_solution",
+        burn_in=0,
+    ),
+
+    # 比較条件（テストではデフォルト＝exog/オンライン）
+    comparison=ComparisonParams(
+        pc_model="exog",
+        pc_use_true_T_init=True,
+        pc_T_init_identity_scale=1.0,
+        pp_init_b0="ones",
+        pp_lookahead=0,
     ),
     
     # 出力設定

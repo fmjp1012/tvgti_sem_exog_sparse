@@ -7,6 +7,8 @@
 from __future__ import annotations
 
 import argparse
+import json
+import subprocess
 import sys
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
@@ -20,7 +22,7 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 from tqdm_joblib import tqdm_joblib
 
-from code.config import SimulationConfig, get_config
+from code.config import SimulationConfig, get_config, config_to_dict
 from code.hyperparam_utils import (
     ResolvedHyperparams,
     hyperparams_to_dict,
@@ -103,6 +105,7 @@ class BaseExperimentRunner(ABC):
         # 評価指標設定
         self.error_normalization = self.cfg.metric.error_normalization
         self.burn_in_cfg = int(getattr(self.cfg.metric, "burn_in", 0))
+        self.divide_by_n2 = bool(getattr(self.cfg.metric, "divide_by_n2", False))
 
     @abstractmethod
     def get_scenario_name(self) -> str:
@@ -232,6 +235,7 @@ class BaseExperimentRunner(ABC):
             hyperparams=self.hyperparams,
             error_normalization=self.error_normalization,
             comparison=getattr(self.cfg, "comparison", None),
+            divide_by_n2=bool(getattr(self.cfg.metric, "divide_by_n2", False)),
         )
         
         return executor.execute_all(Y, Z, S_series, T_mat, S_offline)
@@ -316,17 +320,19 @@ class BaseExperimentRunner(ABC):
             if error_means.get(method) is not None:
                 plt.plot(error_means[method], color=color, label=label)
 
-        if burn_in > 0:
-            plt.axvline(burn_in, color="black", linestyle="--", linewidth=1.0, alpha=0.6, label=f"burn-in={burn_in}")
+        # burn_in の縦線表示は不要（見た目のノイズになるので省略）
         
         plt.yscale("log")
         plt.xlim(left=0, right=self.T)
         plt.xlabel("t")
         
         if self.error_normalization == "offline_solution":
-            plt.ylabel("Average Error Ratio (vs Offline)")
+            ylabel = "Average Error Ratio (vs Offline)"
         else:
-            plt.ylabel("Average NSE")
+            ylabel = "Average NSE"
+        if self.divide_by_n2:
+            ylabel = ylabel + " / N^2"
+        plt.ylabel(ylabel)
         
         plt.grid(True, which="both")
         plt.legend()
@@ -343,9 +349,12 @@ class BaseExperimentRunner(ABC):
             plt.xlim(left=burn_in, right=self.T)
             plt.xlabel("t")
             if self.error_normalization == "offline_solution":
-                plt.ylabel("Average Error Ratio (vs Offline)")
+                ylabel_b = "Average Error Ratio (vs Offline)"
             else:
-                plt.ylabel("Average NSE")
+                ylabel_b = "Average NSE"
+            if self.divide_by_n2:
+                ylabel_b = ylabel_b + " / N^2"
+            plt.ylabel(ylabel_b)
             plt.grid(True, which="both")
             plt.legend()
             save_path_burn = save_path.with_name(f"{save_path.stem}_burnin{burn_in}{save_path.suffix}")
@@ -403,6 +412,28 @@ class BaseExperimentRunner(ABC):
             hyper_copy = backup_script(self.hyperparam_path, scripts_dir)
             script_copies["hyperparams_json"] = str(hyper_copy)
         
+        # ハイパラJSONの内容も埋め込む（パスが変わっても再現できるように）
+        hyperparam_json_content = None
+        if self.hyperparam_path is not None and self.hyperparam_path.is_file():
+            try:
+                hyperparam_json_content = json.loads(self.hyperparam_path.read_text(encoding="utf-8"))
+            except Exception:
+                hyperparam_json_content = None
+
+        # git情報（再現性用）
+        def _git(args: list[str]) -> Optional[str]:
+            try:
+                out = subprocess.check_output(args, cwd=str(Path(__file__).resolve().parents[1]), stderr=subprocess.DEVNULL)
+                return out.decode("utf-8", errors="replace").strip()
+            except Exception:
+                return None
+
+        git_info = {
+            "head": _git(["git", "rev-parse", "HEAD"]),
+            "branch": _git(["git", "rev-parse", "--abbrev-ref", "HEAD"]),
+            "is_dirty": bool(_git(["git", "status", "--porcelain"])),
+        }
+
         # ハイパーパラメータを辞書形式に変換
         hp_dict = hyperparams_to_dict(self.hyperparams)
         
@@ -410,6 +441,10 @@ class BaseExperimentRunner(ABC):
         metadata = {
             "created_at": run_started_at.isoformat(),
             "command": sys.argv,
+            "repro": {
+                "git": git_info,
+                "hyperparam_json_content": hyperparam_json_content,
+            },
             "scenario": self.get_scenario_name(),
             "config": {
                 "num_trials": self.num_trials,
@@ -422,9 +457,13 @@ class BaseExperimentRunner(ABC):
                 "std_e": self.std_e,
                 **self.get_scenario_params(),
             },
+            # config.py の全設定スナップショット（CONFIG_MAIN/TEST の全フィールド）
+            "config_full": config_to_dict(self.cfg),
             "metric": {
                 "error_normalization": self.error_normalization,
                 "offline_lambda_l1": self.hyperparams.offline_lambda_l1,
+                "burn_in": self.burn_in_cfg,
+                "divide_by_n2": bool(getattr(self.cfg.metric, "divide_by_n2", False)),
             },
             "methods": {
                 "pp": {

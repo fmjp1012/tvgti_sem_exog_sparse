@@ -16,6 +16,7 @@ def compute_normalized_error(
     S_true: np.ndarray,
     S_offline: Optional[np.ndarray] = None,
     normalization: str = "true_value",
+    divide_by_n2: bool = False,
     eps: float = 1e-12,
 ) -> float:
     """
@@ -47,8 +48,12 @@ def compute_normalized_error(
         denominator = np.linalg.norm(S_true - S_offline) ** 2 + eps
     else:
         denominator = np.linalg.norm(S_true) ** 2 + eps
-    
-    return float(numerator / denominator)
+
+    value = float(numerator / denominator)
+    if divide_by_n2:
+        N = int(S_true.shape[0])
+        value = float(value / (N * N))
+    return value
 
 
 def compute_error_series(
@@ -56,6 +61,7 @@ def compute_error_series(
     S_true_list: list[np.ndarray],
     S_offline: Optional[np.ndarray] = None,
     normalization: str = "true_value",
+    divide_by_n2: bool = False,
     eps: float = 1e-12,
 ) -> list[float]:
     """
@@ -80,7 +86,14 @@ def compute_error_series(
         各時刻の正規化二乗誤差
     """
     return [
-        compute_normalized_error(S_hat_list[t], S_true_list[t], S_offline, normalization, eps)
+        compute_normalized_error(
+            S_hat_list[t],
+            S_true_list[t],
+            S_offline,
+            normalization,
+            divide_by_n2,
+            eps,
+        )
         for t in range(len(S_hat_list))
     ]
 
@@ -90,6 +103,7 @@ def compute_frobenius_error(
     S_true: np.ndarray,
     S_offline: Optional[np.ndarray] = None,
     normalization: str = "true_value",
+    divide_by_n2: bool = False,
     eps: float = 1e-12,
 ) -> float:
     """
@@ -117,7 +131,12 @@ def compute_frobenius_error(
     
     if normalization == "offline_solution" and S_offline is not None:
         normalizer = np.linalg.norm(S_true - S_offline, ord="fro") + eps
-        return float(err / normalizer)
-    
-    return float(err)
+        value = float(err / normalizer)
+    else:
+        value = float(err)
+
+    if divide_by_n2:
+        N = int(S_true.shape[0])
+        value = float(value / (N * N))
+    return value
 
