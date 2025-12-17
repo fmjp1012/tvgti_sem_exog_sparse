@@ -22,7 +22,7 @@ endif
 LOG_DIR ?= logs
 TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
 
-.PHONY: help config tune_piecewise tune_linear run_piecewise run_linear piecewise linear \
+.PHONY: help config real_config tune_piecewise tune_linear tune_real real run_piecewise run_linear run_real run_real_test piecewise linear \
         bg_piecewise bg_linear bg_tune_piecewise bg_tune_linear bg_run_piecewise bg_run_linear \
         bg_status bg_stop
 
@@ -33,15 +33,20 @@ help:
 	@echo ""
 	@echo "利用可能なターゲット:"
 	@echo "  make config           # 現在の設定を表示"
+	@echo "  make real_config      # 実データ設定を表示"
 	@echo ""
 	@echo "  make piecewise        # Piecewise: チューニング → シミュレーション"
 	@echo "  make linear           # Linear: チューニング → シミュレーション"
 	@echo ""
 	@echo "  make tune_piecewise   # Piecewise: チューニングのみ"
 	@echo "  make tune_linear      # Linear: チューニングのみ"
+	@echo "  make tune_real        # Realデータ: チューニング（system mismatch最小化）"
 	@echo ""
 	@echo "  make run_piecewise    # Piecewise: シミュレーションのみ"
 	@echo "  make run_linear       # Linear: シミュレーションのみ"
+	@echo "  make run_real         # Realデータ: mismatch / recon 比較"
+	@echo "  make run_real_test    # Realデータ: 軽量テスト実行 (N/T小)"
+	@echo "  make real             # Realデータ: チューニング → 実行"
 	@echo ""
 	@echo "=========================================="
 	@echo "SSH切断後も継続するバックグラウンド実行:"
@@ -62,6 +67,9 @@ help:
 config:
 	$(PYTHON) code/config.py
 
+real_config:
+	$(PYTHON) code/real_config.py
+
 piecewise:
 	$(PYTHON) -m code.tune_and_run piecewise
 
@@ -76,11 +84,23 @@ tune_linear:
 	@echo "チューニングのみ実行するには config.py の skip_simulation を True に設定してください"
 	$(PYTHON) -m code.tune_and_run linear
 
+tune_real:
+	$(PYTHON) -m code.tune_real
+
+real:
+	$(PYTHON) -m code.tune_real
+
 run_piecewise:
 	$(PYTHON) -m code.run_piecewise
 
 run_linear:
 	$(PYTHON) -m code.run_linear
+
+run_real:
+	$(PYTHON) -m code.run_real_mismatch_recon
+
+run_real_test:
+	$(PYTHON) -m code.run_real_mismatch_recon --test
 
 # ========================================
 # SSH切断後も継続するバックグラウンド実行

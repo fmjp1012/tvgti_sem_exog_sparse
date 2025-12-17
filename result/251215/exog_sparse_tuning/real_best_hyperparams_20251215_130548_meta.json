@@ -1,0 +1,71 @@
+{
+  "created_at": "2025-12-15T13:05:39.291050",
+  "objective": "system_mismatch_rel_mean",
+  "data": {
+    "csv_path": "real/LD2011_2014_tail10000.csv",
+    "slice_mode": "tail",
+    "N": 20,
+    "T": 1000,
+    "tuning_truncation_T": 200,
+    "log1p": false,
+    "standardize": true
+  },
+  "tuning": {
+    "tuning_trials": 50,
+    "tuning_seed": 4,
+    "burn_in": 0
+  },
+  "enabled_methods": {
+    "pp": true,
+    "pc": true,
+    "co": true,
+    "sgd": true,
+    "pg": false,
+    "offline": true
+  },
+  "results": {
+    "offline": {
+      "best_value": 0.20617944451606163,
+      "best_params": {
+        "offline_lambda_l1": 0.00011645142505747864
+      }
+    },
+    "pp": {
+      "best_value": 0.34269738696342406,
+      "best_params": {
+        "rho": 2.0692899106776984e-05,
+        "mu_lambda": 0.6968139186292772,
+        "lambda_S": 0.003119693847539628
+      }
+    },
+    "pc": {
+      "best_value": 0.17728792227627568,
+      "best_params": {
+        "lambda_reg": 0.0002105428757754184,
+        "alpha": 1.8703197942695655,
+        "beta": 0.00021324944598134896,
+        "gamma": 0.8897162163001715,
+        "P": 1,
+        "C": 1
+      }
+    },
+    "co": {
+      "best_value": 0.15007075870728484,
+      "best_params": {
+        "beta_co": 5.877719723611667
+      }
+    },
+    "sgd": {
+      "best_value": 0.42125602020479136,
+      "best_params": {
+        "beta_sgd": 5.877719723611667
+      }
+    }
+  },
+  "snapshots": {
+    "tune_real": "result/251215/exog_sparse_tuning/scripts/tune_real.py",
+    "real_config": "result/251215/exog_sparse_tuning/scripts/real_config.py",
+    "run_real_mismatch_recon": "result/251215/exog_sparse_tuning/scripts/run_real_mismatch_recon.py"
+  },
+  "hyperparam_file": "result/251215/exog_sparse_tuning/real_best_hyperparams_20251215_130548.json"
+}
