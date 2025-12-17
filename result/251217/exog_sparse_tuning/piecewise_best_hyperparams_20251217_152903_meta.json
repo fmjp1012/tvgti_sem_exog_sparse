@@ -1,0 +1,263 @@
+{
+  "created_at": "2025-12-17T15:29:03.226076",
+  "command": [
+    "/home/ito/tvgti_sem_exog_sparse/code/tune_and_run.py",
+    "piecewise"
+  ],
+  "scenario": "piecewise",
+  "config": {
+    "common": {
+      "N": 20,
+      "T": 1000,
+      "sparsity": 0.7,
+      "max_weight": 0.5,
+      "std_e": 0.05,
+      "seed": 3
+    },
+    "tuning": {
+      "tuning_trials": 300,
+      "tuning_runs_per_trial": 1,
+      "truncation_horizon": 100
+    },
+    "enabled_methods": [
+      "pp",
+      "pc",
+      "co",
+      "sgd"
+    ],
+    "piecewise": {
+      "K": 1
+    }
+  },
+  "tuning_summary": {
+    "seed": 4,
+    "tuning_trials": 300,
+    "tuning_runs_per_trial": 1,
+    "truncation_horizon": 100,
+    "generator_kwargs": {
+      "N": 20,
+      "T": 1000,
+      "sparsity": 0.7,
+      "max_weight": 0.5,
+      "std_e": 0.05,
+      "K": 1,
+      "s_type": "random",
+      "t_min": 0.5,
+      "t_max": 1.0,
+      "z_dist": "uniform01"
+    },
+    "metric": {
+      "error_normalization": "true_value",
+      "offline_lambda_l1": null
+    },
+    "initial_fallback": {
+      "pp": {
+        "r": 50,
+        "q": 5,
+        "rho": 0.001,
+        "mu_lambda": 0.05,
+        "lambda_S": 0.01
+      },
+      "pc": {
+        "lambda_reg": 0.001,
+        "alpha": 0.01,
+        "beta": 0.01,
+        "gamma": 0.9,
+        "P": 1,
+        "C": 1
+      },
+      "co": {
+        "beta_co": 0.02
+      },
+      "sgd": {
+        "beta_sgd": 0.0269
+      },
+      "pg": {
+        "lambda_reg": 0.001,
+        "step_scale": 1.0,
+        "step_size": null,
+        "use_fista": true,
+        "use_backtracking": false,
+        "max_iter": 500,
+        "tol": 0.0001
+      }
+    },
+    "search_spaces": {
+      "pp": {
+        "rho": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 0.1,
+          "log": true
+        },
+        "mu_lambda": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 1.0,
+          "log": true
+        },
+        "lambda_S": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 0.1,
+          "log": true
+        }
+      },
+      "pc": {
+        "lambda_reg": {
+          "type": "float",
+          "low": 1e-05,
+          "high": 0.01,
+          "log": true
+        },
+        "alpha": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 10.0,
+          "log": true
+        },
+        "beta_pc": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 10.0,
+          "log": true
+        },
+        "gamma": {
+          "type": "float",
+          "low": 0.85,
+          "high": 0.999,
+          "log": false
+        },
+        "P": {
+          "type": "int",
+          "low": 1,
+          "high": 1,
+          "log": false,
+          "step": 1
+        },
+        "C": {
+          "type": "int",
+          "low": 1,
+          "high": 1,
+          "log": false,
+          "step": 1
+        }
+      },
+      "co": {
+        "alpha": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 10.0,
+          "log": true
+        },
+        "beta_co": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 10.0,
+          "log": true
+        },
+        "gamma": {
+          "type": "float",
+          "low": 0.85,
+          "high": 0.999,
+          "log": false
+        },
+        "C": {
+          "type": "int",
+          "low": 1,
+          "high": 1,
+          "log": false,
+          "step": 1
+        }
+      },
+      "sgd": {
+        "alpha": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 10.0,
+          "log": true
+        },
+        "beta_sgd": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 10.0,
+          "log": true
+        }
+      },
+      "pg": {
+        "lambda_reg": {
+          "type": "float",
+          "low": 1e-05,
+          "high": 10.0,
+          "log": true
+        },
+        "step_scale": {
+          "type": "float",
+          "low": 1e-06,
+          "high": 10.0,
+          "log": true
+        },
+        "use_fista": {
+          "type": "categorical",
+          "choices": [
+            false
+          ]
+        }
+      },
+      "offline": {
+        "offline_lambda_l1": {
+          "type": "float",
+          "low": 0.0001,
+          "high": 10.0,
+          "log": true
+        }
+      }
+    },
+    "search_overrides": {},
+    "method_results": {
+      "sgd": {
+        "best_params": {
+          "alpha": 1.0511906084277354,
+          "beta_sgd": 0.677015040872483
+        },
+        "best_value": 1.8157985329392454
+      },
+      "co": {
+        "best_params": {
+          "alpha": 1.8289461986374267,
+          "beta_co": 6.476820061373457e-06,
+          "gamma": 0.9516390290157175,
+          "C": 1
+        },
+        "best_value": 1.5896965320541698
+      },
+      "pc": {
+        "best_params": {
+          "lambda_reg": 7.562071545519223e-05,
+          "alpha": 1.7992644320096185,
+          "beta_pc": 0.0031280073052022085,
+          "gamma": 0.9383677320844093,
+          "P": 1,
+          "C": 1
+        },
+        "best_value": 1.3218986825495906
+      },
+      "pp": {
+        "best_params": {
+          "rho": 0.0017300655468804583,
+          "mu_lambda": 0.042026767448462156,
+          "lambda_S": 9.931941596018947e-05
+        },
+        "best_value": 0.30271715489887374
+      }
+    },
+    "generator_name": "code.data_gen.generate_piecewise_X_with_exog"
+  },
+  "snapshots": {
+    "hyperparam_tuning": "result/251217/exog_sparse_tuning/scripts/hyperparam_tuning.py",
+    "tune_and_run": "result/251217/exog_sparse_tuning/scripts/tune_and_run.py",
+    "data_gen": "result/251217/exog_sparse_tuning/scripts/data_gen.py",
+    "config": "result/251217/exog_sparse_tuning/scripts/config.py"
+  },
+  "hyperparam_file": "result/251217/exog_sparse_tuning/piecewise_best_hyperparams_20251217_152903.json"
+}

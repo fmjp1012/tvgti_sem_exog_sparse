@@ -321,7 +321,7 @@ CONFIG_MAIN = SimulationConfig(
     
     # シナリオ共通パラメータ
     common=CommonParams(
-        N=50,
+        N=20,
         T=1000,  # テスト用に短くしています -> 本番パラメータ
         sparsity=0.7,
         max_weight=0.5,
@@ -346,7 +346,7 @@ CONFIG_MAIN = SimulationConfig(
     tuning=TuningParams(
         tuning_trials=300,
         tuning_runs_per_trial=1,
-        truncation_horizon=100,
+        truncation_horizon=800,
         tuning_seed=4,
     ),
     
