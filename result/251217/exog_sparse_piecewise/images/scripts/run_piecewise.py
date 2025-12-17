@@ -160,7 +160,7 @@ def load_hyperparams(json_path: Optional[Path]) -> Optional[Dict[str, Dict[str, 
 
 
 def parse_args() -> Optional[Path]:
-    """コマンドライン引数をパース（ハイパラJSONパスのみ）"""
+    """コマンドライン引数をパース"""
     parser = argparse.ArgumentParser(
         description="Piecewiseシナリオの実験実行（設定は config.py で変更）"
     )
@@ -170,16 +170,28 @@ def parse_args() -> Optional[Path]:
         default=None,
         help="ハイパーパラメータJSONのパス（省略時はconfig.pyのデフォルト値を使用）"
     )
+    parser.add_argument(
+        "--T",
+        type=int,
+        default=None,
+        help="時系列長Tを上書き（省略時はconfig.py）",
+    )
     args = parser.parse_args()
-    return args.hyperparam_json
+    return args
 
 
 def main() -> None:
     """メイン処理"""
-    hyperparam_path = parse_args()
+    args = parse_args()
+    # CLI が未指定なら config.py 側の hyperparam_json を使う
+    hyperparam_path = args.hyperparam_json
     
     # config.py から設定を取得
     cfg = get_config()
+    if args.T is not None:
+        cfg.common.T = int(args.T)
+    if hyperparam_path is None and getattr(cfg, "hyperparam_json", None) is not None:
+        hyperparam_path = cfg.hyperparam_json
     
     apply_style(use_latex=True, font_family="Times New Roman", base_font_size=15)
     
