@@ -321,7 +321,7 @@ CONFIG_MAIN = SimulationConfig(
     
     # シナリオ共通パラメータ
     common=CommonParams(
-        N=20,
+        N=50,
         T=1000,  # テスト用に短くしています -> 本番パラメータ
         sparsity=0.7,
         max_weight=0.5,
