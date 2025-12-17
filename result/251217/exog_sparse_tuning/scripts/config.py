@@ -11,6 +11,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from dataclasses import asdict, is_dataclass
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -237,6 +238,16 @@ class MetricParams:
     # 注意:
     # - burn_in は “評価/可視化の集計” を変えるだけで、データ長Tやプロットの横軸範囲は変えない。
     burn_in: int = 0
+
+    # 誤差を N^2 で割るか（行列要素あたりの平均スケールにする）
+    # - False: 既存の誤差（デフォルト）
+    # - True: (既存の誤差) / (N^2)
+    #
+    # 目的:
+    # - Nが変わったときに、誤差のスケールが N^2 に比例して見えるのを抑える。
+    # 注意:
+    # - 相対比較（どの手法が勝つか）は変えないが、縦軸スケールは変わる。
+    divide_by_n2: bool = False
 
 
 # =============================================================================
@@ -498,13 +509,14 @@ CONFIG_MAIN = SimulationConfig(
         # error_normalization="offline_solution",
         # PPは序盤の更新が弱く出やすいので、自動burn-inを推奨（r+q-2）
         burn_in=-1,                        # -1なら burn_in=r+q-2（“立ち上がり”区間を評価から除外）
+        divide_by_n2=False,                # Trueなら (誤差) / N^2 をプロット・チューニングにも適用
     ),
 
     # 比較条件（「提案法をよく見せる」設定例）
     # - PCへ真のTを与えないことで、未知T推定という条件を揃える
     # - PPは真のT対角でウォームスタート
     comparison=ComparisonParams(
-        pc_model="noexog",                 # PC系のモデル（"noexog"だとZ/Tを使わない）
+        pc_model="exog",                 # PC系のモデル（"noexog"だとZ/Tを使わない）
         pc_use_true_T_init=False,          # PC系に真のTを渡すか（noexogでは基本使われない）
         pc_T_init_identity_scale=1.0,      # pc_use_true_T_init=False のときの T_init=I*scale
         pp_init_b0="true_T_diag",          # PPのT初期値（b0）
@@ -618,6 +630,7 @@ CONFIG_TEST = SimulationConfig(
         # error_normalization="true_value",  # テストではシンプルな方法で
         error_normalization="offline_solution",
         burn_in=0,
+        divide_by_n2=False,
     ),
 
     # 比較条件（テストではデフォルト＝exog/オンライン）
@@ -653,6 +666,34 @@ CONFIG = CONFIG_TEST if USE_TEST_CONFIG else CONFIG_MAIN
 def get_config() -> SimulationConfig:
     """グローバル設定を取得"""
     return CONFIG
+
+
+def _to_jsonable(obj: Any) -> Any:
+    """
+    dataclass/Path を含む設定オブジェクトを JSON へ落とせる形に変換する。
+    """
+    if is_dataclass(obj):
+        return _to_jsonable(asdict(obj))
+    if isinstance(obj, Path):
+        return str(obj)
+    if isinstance(obj, dict):
+        return {str(k): _to_jsonable(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_to_jsonable(v) for v in obj]
+    return obj
+
+
+def config_to_dict(cfg: Optional[SimulationConfig] = None) -> Dict[str, Any]:
+    """
+    config.py の全設定値をスナップショットとして dict 化する。
+    - `*_meta.json` に埋め込む用途を想定。
+    """
+    cfg_obj = cfg if cfg is not None else get_config()
+    return {
+        "use_test_config": bool(USE_TEST_CONFIG),
+        "config_name": "CONFIG_TEST" if USE_TEST_CONFIG else "CONFIG_MAIN",
+        "config": _to_jsonable(cfg_obj),
+    }
 
 
 def get_enabled_methods() -> List[str]:

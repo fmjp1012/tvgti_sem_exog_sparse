@@ -296,7 +296,8 @@ def tune_methods_for_scenario(
         S_true: np.ndarray,
         S_offline: Optional[np.ndarray],
     ) -> float:
-        return compute_frobenius_error(S_hat, S_true, S_offline, error_normalization)
+        divide_by_n2 = bool(getattr(cfg.metric, "divide_by_n2", False))
+        return compute_frobenius_error(S_hat, S_true, S_offline, error_normalization, divide_by_n2)
 
     def objective_pp(trial: optuna.trial.Trial) -> float:
         r_suggested = int(best["pp"].get("r", default_fallback["pp"]["r"]))

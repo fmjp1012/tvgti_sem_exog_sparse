@@ -23,7 +23,7 @@ LOG_DIR ?= logs
 TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
 
 .PHONY: help config real_config tune_piecewise tune_linear tune_real real run_piecewise run_linear run_real run_real_test piecewise linear \
-        bg_piecewise bg_linear bg_tune_piecewise bg_tune_linear bg_run_piecewise bg_run_linear \
+        bg_piecewise bg_linear bg_tune_piecewise bg_tune_linear bg_run_piecewise bg_run_linear bg_run_piecewise_hp \
         bg_status bg_stop
 
 help:
@@ -54,6 +54,7 @@ help:
 	@echo "  make bg_piecewise     # Piecewise: バックグラウンドで実行"
 	@echo "  make bg_linear        # Linear: バックグラウンドで実行"
 	@echo "  make bg_run_piecewise # Piecewise: シミュレーションのみ (バックグラウンド)"
+	@echo "  make bg_run_piecewise_hp HYPER=path/to.json T=2000  # Piecewise: 指定ハイパラ+Tで実行 (バックグラウンド)"
 	@echo "  make bg_run_linear    # Linear: シミュレーションのみ (バックグラウンド)"
 	@echo ""
 	@echo "  make bg_status        # バックグラウンドジョブの状態確認"
@@ -129,6 +130,16 @@ bg_run_piecewise: $(LOG_DIR)
 	@nohup $(PYTHON) -u -m code.run_piecewise > $(LOG_DIR)/run_piecewise_$(TIMESTAMP).log 2>&1 & echo $$! > $(LOG_DIR)/run_piecewise.pid
 	@echo "PID: $$(cat $(LOG_DIR)/run_piecewise.pid)"
 	@echo "ログ確認: tail -f $(LOG_DIR)/run_piecewise_$(TIMESTAMP).log"
+
+bg_run_piecewise_hp: $(LOG_DIR)
+	@echo "バックグラウンドで run_piecewise (HYPER/T指定) を開始します..."
+	@echo "HYPER: $(HYPER)"
+	@echo "T: $(T)"
+	@echo "ログファイル: $(LOG_DIR)/run_piecewise_hp_$(TIMESTAMP).log"
+	@test -n "$(HYPER)" || (echo "ERROR: HYPER=path/to/hyperparams.json を指定してください" && exit 1)
+	@nohup $(PYTHON) -u -m code.run_piecewise --hyperparam_json "$(HYPER)" $(if $(T),--T $(T),) > $(LOG_DIR)/run_piecewise_hp_$(TIMESTAMP).log 2>&1 & echo $$! > $(LOG_DIR)/run_piecewise_hp.pid
+	@echo "PID: $$(cat $(LOG_DIR)/run_piecewise_hp.pid)"
+	@echo "ログ確認: tail -f $(LOG_DIR)/run_piecewise_hp_$(TIMESTAMP).log"
 
 bg_run_linear: $(LOG_DIR)
 	@echo "バックグラウンドで run_linear を開始します..."

@@ -55,6 +55,9 @@ def build_window_blocks(X, Z, center_idx, r, lookahead: int = 0):
     - center_idx = ι
     - 取り出す区間は [ι-r+1, ι] の時系列スライス（時間が足りなければ先頭まで）
     - lookahead > 0 の場合、右側に [ι+1, ι+lookahead] を追加で含める（先読み）
+      ただし「burn-in（序盤のデータ不足）」の緩和としてのみ使う:
+        - ι-r+1 >= 0（過去r点が確保できる）なら、先読みは使わない（lookahead=0相当）
+        - ι-r+1 < 0（過去が足りない序盤）だけ、先読みを許す
     - 列方向が時間方向。並び順は古い→新しいでも新しい→古いでも
       ||·||_F^2 や勾配計算には影響しないので、ここでは古い→新しいで統一
 
@@ -63,7 +66,9 @@ def build_window_blocks(X, Z, center_idx, r, lookahead: int = 0):
         Z_win: (N, L)
     """
     start = max(0, center_idx - r + 1)
-    end = min(X.shape[1], center_idx + 1 + max(0, int(lookahead)))  # python sliceはend非含まないので+1
+    # 序盤のみ先読みを使う（終盤で窓長が縮んで誤差が上がるのを防ぐ）
+    effective_lookahead = max(0, int(lookahead)) if start == 0 else 0
+    end = min(X.shape[1], center_idx + 1 + effective_lookahead)  # python sliceはend非含まないので+1
     X_win = X[:, start:end]
     Z_win = Z[:, start:end]
     return X_win, Z_win

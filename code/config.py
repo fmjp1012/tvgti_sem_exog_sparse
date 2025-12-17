@@ -388,7 +388,7 @@ CONFIG_MAIN = SimulationConfig(
     # シナリオ共通パラメータ
     common=CommonParams(
         N=20,              # ノード数（行列Sは N×N）
-        T=1000,            # 時系列長（プロット横軸は t=0..T-1）
+        T=2000,            # 時系列長（プロット横軸は t=0..T-1）
         sparsity=0.7,      # スパース性（0要素の割合）
         max_weight=0.5,    # Sの非ゼロ重みの上限（生成時）
         std_e=0.05,        # 観測ノイズの標準偏差
@@ -534,7 +534,7 @@ CONFIG_MAIN = SimulationConfig(
     # 実行モード
     skip_tuning=False,
     skip_simulation=False,
-    hyperparam_json=None,  # 既存JSONを使う場合: Path("path/to/hyperparams.json")
+    hyperparam_json=Path("result/251217/exog_sparse_tuning/piecewise_best_hyperparams_20251217_173357.json"),
 )
 
 # =============================================================================
