@@ -23,7 +23,14 @@ def create_result_dir(root: Path, scenario: str, extra_tag: Optional[str] = None
 
 def backup_script(script_path: Path, dest_dir: Path) -> Path:
     dest = dest_dir / f"{Path(script_path).name}"
-    shutil.copy(str(script_path), str(dest))
+    # すでに同じ場所にある場合（例: scripts_dir 配下のファイルを scripts_dir にバックアップ）
+    # は shutil.copy が SameFileError になるのでスキップする。
+    try:
+        if Path(script_path).resolve() == Path(dest).resolve():
+            return dest
+        shutil.copy(str(script_path), str(dest))
+    except shutil.SameFileError:
+        return dest
     return dest
 
 

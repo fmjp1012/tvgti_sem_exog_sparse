@@ -404,9 +404,9 @@ CONFIG_MAIN = SimulationConfig(
     # 実行する手法（Trueにした手法のみ実行、コメントアウトで無効化可能）
     methods=MethodFlags(
         pp=True,
-        pc=False,
-        co=False,
-        sgd=False,
+        pc=True,
+        co=True,
+        sgd=True,
         # pg=True,
     ),
     
@@ -460,19 +460,19 @@ CONFIG_MAIN = SimulationConfig(
                 high=0,
                 log=False,
                 type="categorical",
-                choices=[10, 20, 30, 40, 50, 75, 100, 150, 200],
+                choices=[200, 400, 600, 800, 1000],
             ),
             q=SearchRange(
                 low=0,
                 high=0,
                 log=False,
                 type="categorical",
-                choices=[1, 2, 3, 5, 8, 10],
+                choices=[8, 10, 20, 40],
             ),
             # rho / lambda_S は log 探索で上下限を広げる（極端な条件も拾う）
-            rho=SearchRange(low=1e-8, high=1e0, log=True),           # レベル集合の閾値ρ（大きいほど制約が緩い）
-            mu_lambda=SearchRange(low=1e-3, high=1e1, log=True),     # 緩和係数スカラー（大きいほど更新が速い）
-            lambda_S=SearchRange(low=1e-8, high=1e0, log=True),      # SブロックへのL1強度（スパース誘導）
+            rho=SearchRange(low=1e-12, high=1e0, log=True),           # レベル集合の閾値ρ（大きいほど制約が緩い）
+            mu_lambda=SearchRange(low=1e-3, high=1e3, log=True),     # 緩和係数スカラー（大きいほど更新が速い）
+            lambda_S=SearchRange(low=1e-12, high=1e0, log=True),      # SブロックへのL1強度（スパース誘導）
         ),
         pc=PCSearchSpace(
             lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True),   # L1正則化係数（PCの疎性）
@@ -575,8 +575,8 @@ CONFIG_MAIN = SimulationConfig(
     # 実行モード
     skip_tuning=False,
     skip_simulation=False,
-    hyperparam_json=None,
-    # hyperparam_json=Path("result/251217/exog_sparse_tuning/piecewise_best_hyperparams_20251217_173357.json"),
+    # ppだけ 251221、他手法は 251217 のハイパラにした “マージ済みJSON”
+    hyperparam_json=Path("result/251221/exog_sparse_piecewise/images/scripts/piecewise_hyperparams_pp251221_others251217.json"),
 )
 
 # =============================================================================

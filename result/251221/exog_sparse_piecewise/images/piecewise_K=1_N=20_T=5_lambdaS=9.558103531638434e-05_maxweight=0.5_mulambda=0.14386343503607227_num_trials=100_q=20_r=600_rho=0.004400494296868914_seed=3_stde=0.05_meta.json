@@ -1,0 +1,673 @@
+{
+  "created_at": "2025-12-21T23:51:47.121926",
+  "command": [
+    "/home/ito/tvgti_sem_exog_sparse/code/run_piecewise.py",
+    "--T",
+    "5"
+  ],
+  "repro": {
+    "git": {
+      "head": "3e99e0213878f0fed1d77d7723f3fb9231884916",
+      "branch": "main",
+      "is_dirty": true
+    },
+    "hyperparam_json_content": {
+      "pp": {
+        "r": 600,
+        "q": 20,
+        "rho": 0.004400494296868914,
+        "mu_lambda": 0.14386343503607227,
+        "lambda_S": 9.558103531638434e-05
+      },
+      "pp_sgd": {
+        "r": 1,
+        "q": 1,
+        "rho": 0.001,
+        "mu_lambda": 0.05,
+        "lambda_S": 0.01
+      },
+      "pc": {
+        "lambda_reg": 6.809704369852533e-05,
+        "alpha": 0.9502870263092493,
+        "beta": 0.695316890314427,
+        "gamma": 0.9743233555240517,
+        "P": 1,
+        "C": 1
+      },
+      "co": {
+        "beta_co": 0.8871868512906878
+      },
+      "sgd": {
+        "beta_sgd": 3.5362372733237173
+      },
+      "pg": {
+        "lambda_reg": 0.001,
+        "step_scale": 1.0,
+        "step_size": null,
+        "use_fista": true,
+        "use_backtracking": false,
+        "max_iter": 500,
+        "tol": 0.0001
+      }
+    }
+  },
+  "config": {
+    "num_trials": 100,
+    "seed_base": 3,
+    "trial_seeds": [
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15,
+      16,
+      17,
+      18,
+      19,
+      20,
+      21,
+      22,
+      23,
+      24,
+      25,
+      26,
+      27,
+      28,
+      29,
+      30,
+      31,
+      32,
+      33,
+      34,
+      35,
+      36,
+      37,
+      38,
+      39,
+      40,
+      41,
+      42,
+      43,
+      44,
+      45,
+      46,
+      47,
+      48,
+      49,
+      50,
+      51,
+      52,
+      53,
+      54,
+      55,
+      56,
+      57,
+      58,
+      59,
+      60,
+      61,
+      62,
+      63,
+      64,
+      65,
+      66,
+      67,
+      68,
+      69,
+      70,
+      71,
+      72,
+      73,
+      74,
+      75,
+      76,
+      77,
+      78,
+      79,
+      80,
+      81,
+      82,
+      83,
+      84,
+      85,
+      86,
+      87,
+      88,
+      89,
+      90,
+      91,
+      92,
+      93,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100,
+      101,
+      102
+    ],
+    "N": 20,
+    "T": 5,
+    "sparsity": 0.7,
+    "max_weight": 0.5,
+    "std_e": 0.05,
+    "K": 1
+  },
+  "config_full": {
+    "use_test_config": false,
+    "config_name": "CONFIG_MAIN",
+    "config": {
+      "methods": {
+        "pp": true,
+        "pp_sgd": false,
+        "pc": true,
+        "co": true,
+        "sgd": true,
+        "pg": false
+      },
+      "common": {
+        "N": 20,
+        "T": 5,
+        "sparsity": 0.7,
+        "max_weight": 0.5,
+        "std_e": 0.05,
+        "seed": 3
+      },
+      "piecewise": {
+        "K": 1
+      },
+      "linear": {},
+      "data_gen": {
+        "s_type": "random",
+        "t_min": 0.5,
+        "t_max": 1.0,
+        "z_dist": "uniform01"
+      },
+      "tuning": {
+        "tuning_trials": 500,
+        "tuning_runs_per_trial": 1,
+        "truncation_horizon": 800,
+        "tuning_seed": 4
+      },
+      "search_spaces": {
+        "pp": {
+          "r": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              200,
+              400,
+              600,
+              800,
+              1000
+            ]
+          },
+          "q": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              8,
+              10,
+              20,
+              40
+            ]
+          },
+          "rho": {
+            "low": 1e-12,
+            "high": 1.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "mu_lambda": {
+            "low": 0.001,
+            "high": 1000.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "lambda_S": {
+            "low": 1e-12,
+            "high": 1.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          }
+        },
+        "pp_sgd": {
+          "r": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              10,
+              20,
+              30,
+              40,
+              50,
+              75,
+              100,
+              150,
+              200
+            ]
+          },
+          "q": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              1,
+              2,
+              3,
+              5,
+              8,
+              10
+            ]
+          },
+          "rho": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "mu_lambda": {
+            "low": 0.0001,
+            "high": 1.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "lambda_S": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          }
+        },
+        "pc": {
+          "lambda_reg": {
+            "low": 1e-05,
+            "high": 0.01,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "alpha": {
+            "low": 1e-06,
+            "high": 10.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "beta_pc": {
+            "low": 1e-06,
+            "high": 10.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "gamma": {
+            "low": 0.85,
+            "high": 0.999,
+            "log": false,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "P": {
+            "low": 1,
+            "high": 1,
+            "log": false,
+            "type": "int",
+            "step": 1,
+            "choices": null
+          },
+          "C": {
+            "low": 1,
+            "high": 1,
+            "log": false,
+            "type": "int",
+            "step": 1,
+            "choices": null
+          }
+        },
+        "co": {
+          "alpha": {
+            "low": 1e-06,
+            "high": 10.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "beta_co": {
+            "low": 1e-06,
+            "high": 10.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "gamma": {
+            "low": 0.85,
+            "high": 0.999,
+            "log": false,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "C": {
+            "low": 1,
+            "high": 1,
+            "log": false,
+            "type": "int",
+            "step": 1,
+            "choices": null
+          }
+        },
+        "sgd": {
+          "alpha": {
+            "low": 1e-06,
+            "high": 10.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "beta_sgd": {
+            "low": 1e-06,
+            "high": 10.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          }
+        },
+        "pg": {
+          "lambda_reg": {
+            "low": 1e-05,
+            "high": 10.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "step_scale": {
+            "low": 1e-06,
+            "high": 10.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "use_fista": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              false
+            ]
+          }
+        },
+        "offline": {
+          "offline_lambda_l1": {
+            "low": 0.0001,
+            "high": 10.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          }
+        }
+      },
+      "hyperparams": {
+        "pp": {
+          "r": 50,
+          "q": 5,
+          "rho": 0.001,
+          "mu_lambda": 1.0,
+          "lambda_S": 0.01
+        },
+        "pp_sgd": {
+          "r": 1,
+          "q": 1,
+          "rho": 0.001,
+          "mu_lambda": 0.05,
+          "lambda_S": 0.01
+        },
+        "pc": {
+          "lambda_reg": 0.001,
+          "alpha": 0.01,
+          "beta": 0.01,
+          "gamma": 0.95,
+          "P": 1,
+          "C": 1
+        },
+        "co": {
+          "beta_co": 0.01
+        },
+        "sgd": {
+          "beta_sgd": 0.01
+        },
+        "pg": {
+          "lambda_reg": 0.001,
+          "step_scale": 1.0,
+          "step_size": null,
+          "use_fista": true,
+          "use_backtracking": false,
+          "max_iter": 500,
+          "tol": 0.0001
+        }
+      },
+      "run": {
+        "num_trials": 100
+      },
+      "metric": {
+        "error_normalization": "true_value",
+        "burn_in": -1,
+        "divide_by_n2": false
+      },
+      "comparison": {
+        "pc_model": "exog",
+        "pc_use_true_T_init": false,
+        "pc_T_init_identity_scale": 1.0,
+        "pp_init_b0": "true_T_diag",
+        "pp_lookahead": -1
+      },
+      "output": {
+        "result_root": "result",
+        "subdir_piecewise": "exog_sparse_piecewise",
+        "subdir_linear": "exog_sparse_linear",
+        "subdir_tuning": "exog_sparse_tuning"
+      },
+      "skip_tuning": false,
+      "skip_simulation": false,
+      "hyperparam_json": "result/251221/exog_sparse_piecewise/images/scripts/piecewise_hyperparams_pp251221_others251217.json"
+    }
+  },
+  "metric": {
+    "error_normalization": "true_value",
+    "offline_lambda_l1": null,
+    "burn_in": -1,
+    "burn_in_effective": 618,
+    "divide_by_n2": false
+  },
+  "comparison": {
+    "pc_model": "exog",
+    "pc_use_true_T_init": false,
+    "pc_T_init_identity_scale": 1.0,
+    "pp_init_b0": "true_T_diag",
+    "pp_lookahead": -1,
+    "pp_lookahead_effective": 618
+  },
+  "methods": {
+    "pp": {
+      "enabled": true,
+      "hyperparams": {
+        "r": 600,
+        "q": 20,
+        "rho": 0.004400494296868914,
+        "mu_lambda": 0.14386343503607227,
+        "lambda_S": 9.558103531638434e-05
+      }
+    },
+    "pp_sgd": {
+      "enabled": false,
+      "hyperparams": {
+        "r": 1,
+        "q": 1,
+        "rho": 0.001,
+        "mu_lambda": 0.05,
+        "lambda_S": 0.01
+      }
+    },
+    "pc": {
+      "enabled": true,
+      "hyperparams": {
+        "lambda_reg": 6.809704369852533e-05,
+        "alpha": 0.9502870263092493,
+        "beta": 0.695316890314427,
+        "gamma": 0.9743233555240517,
+        "P": 1,
+        "C": 1
+      }
+    },
+    "co": {
+      "enabled": true,
+      "hyperparams": {
+        "lambda_reg": 6.809704369852533e-05,
+        "alpha": 0.9502870263092493,
+        "beta_co": 0.8871868512906878,
+        "gamma": 0.9743233555240517,
+        "C": 1
+      }
+    },
+    "sgd": {
+      "enabled": true,
+      "hyperparams": {
+        "lambda_reg": 6.809704369852533e-05,
+        "alpha": 0.9502870263092493,
+        "beta_sgd": 3.5362372733237173,
+        "C": 1
+      }
+    },
+    "pg": {
+      "enabled": false,
+      "hyperparams": {
+        "lambda_reg": 0.001,
+        "step_scale": 1.0,
+        "step_size": null,
+        "use_fista": true,
+        "use_backtracking": false,
+        "max_iter": 500,
+        "tol": 0.0001
+      }
+    }
+  },
+  "generator": {
+    "function": "code.data_gen.generate_piecewise_X_with_exog",
+    "kwargs": {
+      "s_type": "random",
+      "t_min": 0.5,
+      "t_max": 1.0,
+      "z_dist": "uniform01"
+    }
+  },
+  "results": {
+    "figure": "piecewise_K=1_N=20_T=5_lambdaS=9.558103531638434e-05_maxweight=0.5_mulambda=0.14386343503607227_num_trials=100_q=20_r=600_rho=0.004400494296868914_seed=3_stde=0.05.png",
+    "figure_path": "result/251221/exog_sparse_piecewise/images/piecewise_K=1_N=20_T=5_lambdaS=9.558103531638434e-05_maxweight=0.5_mulambda=0.14386343503607227_num_trials=100_q=20_r=600_rho=0.004400494296868914_seed=3_stde=0.05.png",
+    "figure_burnin": "piecewise_K=1_N=20_T=5_lambdaS=9.558103531638434e-05_maxweight=0.5_mulambda=0.14386343503607227_num_trials=100_q=20_r=600_rho=0.004400494296868914_seed=3_stde=0.05_burnin618.png",
+    "figure_burnin_path": "result/251221/exog_sparse_piecewise/images/piecewise_K=1_N=20_T=5_lambdaS=9.558103531638434e-05_maxweight=0.5_mulambda=0.14386343503607227_num_trials=100_q=20_r=600_rho=0.004400494296868914_seed=3_stde=0.05_burnin618.png",
+    "summary_means": {
+      "full_mean": {
+        "pp": 0.9861990573836511,
+        "pp_sgd": null,
+        "pc": 0.9439616979530611,
+        "co": 0.9535144192383566,
+        "sgd": 0.9356088370531808,
+        "pg": null
+      },
+      "post_burnin_mean": {
+        "pp": null,
+        "pp_sgd": null,
+        "pc": null,
+        "co": null,
+        "sgd": null,
+        "pg": null
+      }
+    },
+    "metrics": {
+      "pp": [
+        0.999999999999893,
+        0.9896039147971498,
+        0.9848586566920635,
+        0.9803819288222022,
+        0.9761507866069473
+      ],
+      "pp_sgd": null,
+      "pc": [
+        0.999999999999893,
+        0.9565697067128055,
+        0.937733576270095,
+        0.9214763634288503,
+        0.9040288433536615
+      ],
+      "co": [
+        0.999999999999893,
+        0.9640986770214093,
+        0.9475749352058742,
+        0.9341747890129093,
+        0.9217236949516975
+      ],
+      "sgd": [
+        0.999999999999893,
+        0.9419022228213416,
+        0.9266334969508623,
+        0.9112886955240214,
+        0.8982197699697855
+      ],
+      "pg": null
+    }
+  },
+  "snapshots": {
+    "run_piecewise": "result/251221/exog_sparse_piecewise/images/scripts/run_piecewise.py",
+    "config": "result/251221/exog_sparse_piecewise/images/scripts/config.py",
+    "data_gen": "result/251221/exog_sparse_piecewise/images/scripts/data_gen.py",
+    "hyperparams_json": "result/251221/exog_sparse_piecewise/images/scripts/piecewise_hyperparams_pp251221_others251217.json"
+  },
+  "hyperparam_json": "result/251221/exog_sparse_piecewise/images/scripts/piecewise_hyperparams_pp251221_others251217.json",
+  "result_dir": "result/251221/exog_sparse_piecewise/images"
+}
