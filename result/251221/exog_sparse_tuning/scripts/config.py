@@ -392,7 +392,7 @@ class SimulationConfig:
 # True: テスト用の軽量設定（プログラム動作確認用、すぐに終わる）
 # False: 本番用設定（実際のシミュレーション用）
 # USE_TEST_CONFIG = True
-USE_TEST_CONFIG = True
+USE_TEST_CONFIG = False
 
 # =============================================================================
 # ★★★ 設定を変更するにはここを編集してください ★★★
@@ -575,7 +575,8 @@ CONFIG_MAIN = SimulationConfig(
     # 実行モード
     skip_tuning=False,
     skip_simulation=False,
-    hyperparam_json=Path("result/251217/exog_sparse_tuning/piecewise_best_hyperparams_20251217_173357.json"),
+    hyperparam_json=None,
+    # hyperparam_json=Path("result/251217/exog_sparse_tuning/piecewise_best_hyperparams_20251217_173357.json"),
 )
 
 # =============================================================================
