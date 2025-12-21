@@ -25,6 +25,7 @@ from code.config import ComparisonParams
 class MethodFlags:
     """実行する手法のフラグ"""
     pp: bool = False
+    pp_sgd: bool = False
     pc: bool = False
     co: bool = False
     sgd: bool = False
@@ -35,6 +36,7 @@ class MethodFlags:
         """config.pyのMethodFlagsから作成"""
         return cls(
             pp=cfg.methods.pp,
+            pp_sgd=getattr(cfg.methods, "pp_sgd", False),
             pc=cfg.methods.pc,
             co=cfg.methods.co,
             sgd=cfg.methods.sgd,
@@ -45,6 +47,7 @@ class MethodFlags:
         """辞書形式に変換"""
         return {
             "pp": self.pp,
+            "pp_sgd": self.pp_sgd,
             "pc": self.pc,
             "co": self.co,
             "sgd": self.sgd,
@@ -143,6 +146,56 @@ class MethodExecutor:
         )
         S_hat_list, _ = model.run(Y, U)
         
+        errors = compute_error_series(
+            S_hat_list,
+            S_series,
+            S_offline,
+            self.error_normalization,
+            self.divide_by_n2,
+        )
+        return errors, S_hat_list[-1]
+
+    def execute_pp_sgd(
+        self,
+        Y: np.ndarray,
+        U: np.ndarray,
+        S_series: List[np.ndarray],
+        T_true: np.ndarray,
+        S_offline: Optional[np.ndarray],
+    ) -> Tuple[Optional[List[float]], Optional[np.ndarray]]:
+        """
+        PP-SGD（q=1, r=1固定）を実行する。
+
+        - PPExogenousSEM を「窓長 r=1」「並列ブロック数 q=1」に固定して用いる。
+        - それ以外（rho/mu_lambda/lambda_S, 初期化など）は通常のPPと同様。
+        """
+        if not getattr(self.flags, "pp_sgd", False):
+            return None, None
+
+        # 互換性のため pp_sgd が未定義なら pp を流用
+        hp_ppsgd = getattr(self.hp, "pp_sgd", self.hp.pp)
+
+        S0 = np.zeros((self.N, self.N))
+        b0 = self._resolve_pp_b0(T_true)
+
+        r = 1
+        q = 1
+        lookahead_cfg = int(getattr(self.comparison, "pp_lookahead", 0))
+        lookahead = (r + q - 2) if lookahead_cfg == -1 else max(0, lookahead_cfg)
+
+        model = PPExogenousSEM(
+            self.N,
+            S0,
+            b0,
+            r=r,
+            q=q,
+            rho=float(getattr(hp_ppsgd, "rho", self.hp.pp.rho)),
+            mu_lambda=float(getattr(hp_ppsgd, "mu_lambda", self.hp.pp.mu_lambda)),
+            lambda_S=float(getattr(hp_ppsgd, "lambda_S", self.hp.pp.lambda_S)),
+            lookahead=int(lookahead),
+        )
+        S_hat_list, _ = model.run(Y, U)
+
         errors = compute_error_series(
             S_hat_list,
             S_series,
@@ -394,6 +447,12 @@ class MethodExecutor:
         if errors_pp is not None:
             result.errors["pp"] = errors_pp
             result.estimates_final["PP"] = est_pp
+
+        # PP-SGD法（q=1, r=1固定）
+        errors_ppsgd, est_ppsgd = self.execute_pp_sgd(Y, Z, S_series, T_init, S_offline)
+        if errors_ppsgd is not None:
+            result.errors["pp_sgd"] = errors_ppsgd
+            result.estimates_final["PP-SGD"] = est_ppsgd
         
         # PC法
         errors_pc, est_pc = self.execute_pc(Y, Z, S_series, S_offline, T_init)

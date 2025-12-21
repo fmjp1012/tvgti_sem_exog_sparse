@@ -72,6 +72,7 @@ class PGParams:
 class ResolvedHyperparams:
     """全手法の解決済みハイパーパラメータ"""
     pp: PPParams = field(default_factory=PPParams)
+    pp_sgd: PPParams = field(default_factory=lambda: PPParams(r=1, q=1))
     pc: PCParams = field(default_factory=PCParams)
     co: COParams = field(default_factory=COParams)
     sgd: SGDParams = field(default_factory=SGDParams)
@@ -132,6 +133,7 @@ def resolve_hyperparams(
     hyperparams = loaded if loaded else defaults
     
     pp_cfg = hyperparams.get("pp", {})
+    pp_sgd_cfg = hyperparams.get("pp_sgd", {})
     pc_cfg = hyperparams.get("pc", {})
     co_cfg = hyperparams.get("co", {})
     sgd_cfg = hyperparams.get("sgd", {})
@@ -144,6 +146,15 @@ def resolve_hyperparams(
         rho=float(pp_cfg.get("rho", cfg.hyperparams.pp.rho)),
         mu_lambda=float(pp_cfg.get("mu_lambda", cfg.hyperparams.pp.mu_lambda)),
         lambda_S=float(pp_cfg.get("lambda_S", cfg.hyperparams.pp.lambda_S)),
+    )
+
+    # PP-SGD（q=1,r=1固定）
+    pp_sgd = PPParams(
+        r=1,
+        q=1,
+        rho=float(pp_sgd_cfg.get("rho", cfg.hyperparams.pp_sgd.rho)),
+        mu_lambda=float(pp_sgd_cfg.get("mu_lambda", cfg.hyperparams.pp_sgd.mu_lambda)),
+        lambda_S=float(pp_sgd_cfg.get("lambda_S", cfg.hyperparams.pp_sgd.lambda_S)),
     )
     
     # PC法
@@ -198,6 +209,7 @@ def resolve_hyperparams(
     
     return ResolvedHyperparams(
         pp=pp,
+        pp_sgd=pp_sgd,
         pc=pc,
         co=co,
         sgd=sgd,
@@ -227,6 +239,13 @@ def hyperparams_to_dict(hp: ResolvedHyperparams) -> Dict[str, Dict[str, Any]]:
             "rho": hp.pp.rho,
             "mu_lambda": hp.pp.mu_lambda,
             "lambda_S": hp.pp.lambda_S,
+        },
+        "pp_sgd": {
+            "r": hp.pp_sgd.r,
+            "q": hp.pp_sgd.q,
+            "rho": hp.pp_sgd.rho,
+            "mu_lambda": hp.pp_sgd.mu_lambda,
+            "lambda_S": hp.pp_sgd.lambda_S,
         },
         "pc": {
             "lambda_reg": hp.pc.lambda_reg,

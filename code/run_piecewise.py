@@ -197,6 +197,7 @@ def main() -> None:
     
     # 手法フラグ
     run_pp_flag = cfg.methods.pp
+    run_pp_sgd_flag = getattr(cfg.methods, "pp_sgd", False)
     run_pc_flag = cfg.methods.pc
     run_co_flag = cfg.methods.co
     run_sgd_flag = cfg.methods.sgd
@@ -219,6 +220,7 @@ def main() -> None:
     hyperparams = loaded_hyperparams if loaded_hyperparams else default_hyperparams
     
     pp_cfg = hyperparams.get("pp", {})
+    pp_sgd_cfg = hyperparams.get("pp_sgd", {})
     pc_cfg = hyperparams.get("pc", {})
     co_cfg = hyperparams.get("co", {})
     sgd_cfg = hyperparams.get("sgd", {})
@@ -230,6 +232,13 @@ def main() -> None:
     rho = float(pp_cfg.get("rho", cfg.hyperparams.pp.rho))
     mu_lambda = float(pp_cfg.get("mu_lambda", cfg.hyperparams.pp.mu_lambda))
     lambda_S = float(pp_cfg.get("lambda_S", cfg.hyperparams.pp.lambda_S))
+
+    # PP-SGD（q=1,r=1固定）のハイパーパラメータ
+    r_pp_sgd = 1
+    q_pp_sgd = 1
+    rho_pp_sgd = float(pp_sgd_cfg.get("rho", cfg.hyperparams.pp_sgd.rho))
+    mu_lambda_pp_sgd = float(pp_sgd_cfg.get("mu_lambda", cfg.hyperparams.pp_sgd.mu_lambda))
+    lambda_S_pp_sgd = float(pp_sgd_cfg.get("lambda_S", cfg.hyperparams.pp_sgd.lambda_S))
     
     # PC法のハイパーパラメータ
     lambda_reg = float(pc_cfg.get("lambda_reg", cfg.hyperparams.pc.lambda_reg))
@@ -261,6 +270,7 @@ def main() -> None:
         num_trials=num_trials,
         run_flags={
             "pp": run_pp_flag,
+            "pp_sgd": run_pp_sgd_flag,
             "pc": run_pc_flag,
             "co": run_co_flag,
             "sgd": run_sgd_flag,
@@ -268,6 +278,7 @@ def main() -> None:
         },
         hyperparams={
             "pp": {"r": r, "q": q, "rho": rho, "mu_lambda": mu_lambda, "lambda_S": lambda_S},
+            "pp_sgd": {"r": r_pp_sgd, "q": q_pp_sgd, "rho": rho_pp_sgd, "mu_lambda": mu_lambda_pp_sgd, "lambda_S": lambda_S_pp_sgd},
             "pc": {"lambda_reg": lambda_reg, "alpha": alpha, "beta": beta, "gamma": gamma, "P": P, "C": C},
             "co": {"lambda_reg": lambda_reg, "alpha": alpha, "beta_co": beta_co, "gamma": gamma, "C": C},
             "sgd": {"lambda_reg": sgd_lambda_reg, "alpha": sgd_alpha, "beta_sgd": beta_sgd, "C": C},
@@ -315,6 +326,7 @@ def main() -> None:
     pp_init_b0_mode = "ones" if comp is None else str(getattr(comp, "pp_init_b0", "ones")).strip()
     pp_lookahead_cfg = 0 if comp is None else int(getattr(comp, "pp_lookahead", 0))
     pp_lookahead = (int(r) + int(q) - 2) if pp_lookahead_cfg == -1 else max(0, int(pp_lookahead_cfg))
+    pp_sgd_lookahead = (int(r_pp_sgd) + int(q_pp_sgd) - 2) if pp_lookahead_cfg == -1 else max(0, int(pp_lookahead_cfg))
 
     def _pc_T_init(T_true: np.ndarray) -> np.ndarray:
         return T_true if pc_use_true_T else (np.eye(N) * pc_T_scale)
@@ -360,6 +372,22 @@ def main() -> None:
             error_pp = compute_error_series(S_hat_list, S_series, S_offline, error_normalization, divide_by_n2)
             errors['pp'] = error_pp
             estimates_final['PP'] = S_hat_list[-1]
+
+        if run_pp_sgd_flag:
+            S0 = np.zeros((N, N))
+            b0 = _pp_b0(B_true)
+            model = PPExogenousSEM(
+                N, S0, b0,
+                r=r_pp_sgd, q=q_pp_sgd,
+                rho=rho_pp_sgd, mu_lambda=mu_lambda_pp_sgd, lambda_S=lambda_S_pp_sgd,
+                lookahead=pp_sgd_lookahead,
+            )
+            S_hat_list, _ = model.run(Y, U)
+            error_pp_sgd = compute_error_series(
+                S_hat_list, S_series, S_offline, error_normalization, divide_by_n2
+            )
+            errors["pp_sgd"] = error_pp_sgd
+            estimates_final["PP-SGD"] = S_hat_list[-1]
         
         if run_pc_flag:
             X = Y
@@ -453,6 +481,7 @@ def main() -> None:
     
     trial_seeds = [seed + i for i in range(num_trials)]
     error_pp_total = np.zeros(T) if run_pp_flag else None
+    error_pp_sgd_total = np.zeros(T) if run_pp_sgd_flag else None
     error_pc_total = np.zeros(T) if run_pc_flag else None
     error_co_total = np.zeros(T) if run_co_flag else None
     error_sgd_total = np.zeros(T) if run_sgd_flag else None
@@ -467,6 +496,8 @@ def main() -> None:
     for errs, estimates_final in results:
         if run_pp_flag:
             error_pp_total += np.array(errs['pp'])
+        if run_pp_sgd_flag:
+            error_pp_sgd_total += np.array(errs["pp_sgd"])
         if run_pc_flag:
             error_pc_total += np.array(errs['pc'])
         if run_co_flag:
@@ -478,6 +509,7 @@ def main() -> None:
         last_estimates = estimates_final
     
     error_pp_mean = error_pp_total / num_trials if run_pp_flag else None
+    error_pp_sgd_mean = error_pp_sgd_total / num_trials if run_pp_sgd_flag else None
     error_pc_mean = error_pc_total / num_trials if run_pc_flag else None
     error_co_mean = error_co_total / num_trials if run_co_flag else None
     error_sgd_mean = error_sgd_total / num_trials if run_sgd_flag else None
@@ -495,6 +527,7 @@ def main() -> None:
     summary_means = {
         "full_mean": {
             "pp": float(np.mean(error_pp_mean)) if run_pp_flag else None,
+            "pp_sgd": float(np.mean(error_pp_sgd_mean)) if run_pp_sgd_flag else None,
             "pc": float(np.mean(error_pc_mean)) if run_pc_flag else None,
             "co": float(np.mean(error_co_mean)) if run_co_flag else None,
             "sgd": float(np.mean(error_sgd_mean)) if run_sgd_flag else None,
@@ -502,6 +535,7 @@ def main() -> None:
         },
         "post_burnin_mean": {
             "pp": _mean_after_burnin(error_pp_mean),
+            "pp_sgd": _mean_after_burnin(error_pp_sgd_mean),
             "pc": _mean_after_burnin(error_pc_mean),
             "co": _mean_after_burnin(error_co_mean),
             "sgd": _mean_after_burnin(error_sgd_mean),
@@ -518,6 +552,8 @@ def main() -> None:
         plt.plot(error_sgd_mean, color='cyan', label='SGD')
     if run_pg_flag:
         plt.plot(error_pg_mean, color='magenta', label='ProxGrad')
+    if run_pp_sgd_flag:
+        plt.plot(error_pp_sgd_mean, color='orange', label='PP-SGD (q=1,r=1)')
     if run_pp_flag:
         plt.plot(error_pp_mean, color='red', label='Proposed (PP)')
     plt.yscale('log')
@@ -561,6 +597,8 @@ def main() -> None:
             plt.plot(np.arange(burn_in, T), error_sgd_mean[burn_in:], color='cyan', label='SGD')
         if run_pg_flag:
             plt.plot(np.arange(burn_in, T), error_pg_mean[burn_in:], color='magenta', label='ProxGrad')
+        if run_pp_sgd_flag:
+            plt.plot(np.arange(burn_in, T), error_pp_sgd_mean[burn_in:], color='orange', label='PP-SGD (q=1,r=1)')
         if run_pp_flag:
             plt.plot(np.arange(burn_in, T), error_pp_mean[burn_in:], color='red', label='Proposed (PP)')
         plt.yscale('log')
@@ -650,6 +688,7 @@ def main() -> None:
         },
         "methods": {
             "pp": {"enabled": run_pp_flag, "hyperparams": {"r": r, "q": q, "rho": rho, "mu_lambda": mu_lambda, "lambda_S": lambda_S}},
+            "pp_sgd": {"enabled": run_pp_sgd_flag, "hyperparams": {"r": r_pp_sgd, "q": q_pp_sgd, "rho": rho_pp_sgd, "mu_lambda": mu_lambda_pp_sgd, "lambda_S": lambda_S_pp_sgd}},
             "pc": {"enabled": run_pc_flag, "hyperparams": {"lambda_reg": lambda_reg, "alpha": alpha, "beta": beta, "gamma": gamma, "P": P, "C": C}},
             "co": {"enabled": run_co_flag, "hyperparams": {"lambda_reg": lambda_reg, "alpha": alpha, "beta_co": beta_co, "gamma": gamma, "C": C}},
             "sgd": {"enabled": run_sgd_flag, "hyperparams": {"lambda_reg": lambda_reg, "alpha": alpha, "beta_sgd": beta_sgd, "C": C}},
@@ -679,6 +718,7 @@ def main() -> None:
             "summary_means": summary_means,
             "metrics": {
                 "pp": error_pp_mean.tolist() if run_pp_flag else None,
+                "pp_sgd": error_pp_sgd_mean.tolist() if run_pp_sgd_flag else None,
                 "pc": error_pc_mean.tolist() if run_pc_flag else None,
                 "co": error_co_mean.tolist() if run_co_flag else None,
                 "sgd": error_sgd_mean.tolist() if run_sgd_flag else None,

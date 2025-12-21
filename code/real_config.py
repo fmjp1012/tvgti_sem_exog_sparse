@@ -23,6 +23,7 @@ class MethodFlags:
     """実行する手法のフラグ（実データ用）"""
 
     pp: bool = False
+    pp_sgd: bool = False
     pc: bool = False
     co: bool = False
     sgd: bool = False
@@ -260,6 +261,7 @@ def print_real_config_summary() -> None:
 
     print("\n--- 実行する手法 ---")
     print(f"  PP:  {'ON' if cfg.methods.pp else 'OFF'}")
+    print(f"  PP-SGD (q=1,r=1): {'ON' if getattr(cfg.methods, 'pp_sgd', False) else 'OFF'}")
     print(f"  PC:  {'ON' if cfg.methods.pc else 'OFF'}")
     print(f"  CO:  {'ON' if cfg.methods.co else 'OFF'}")
     print(f"  SGD: {'ON' if cfg.methods.sgd else 'OFF'}")

@@ -49,7 +49,7 @@ def _signal_handler(signum: int, frame: Any) -> None:
     _shutdown_event.set()
 
 
-SUPPORTED_METHODS: Tuple[str, ...] = ("pp", "pc", "co", "sgd", "pg")
+SUPPORTED_METHODS: Tuple[str, ...] = ("pp", "pp_sgd", "pc", "co", "sgd", "pg")
 
 
 def _normalize_methods(methods: Optional[Iterable[Any]]) -> list[str]:
@@ -237,7 +237,8 @@ def tune_methods_for_scenario(
     T = int(generator_kwargs["T"])
     T_tune = min(T, truncation_horizon)
     penalty_value = 1e6
-    method_ids = {"pp": 0, "pc": 1, "co": 2, "sgd": 3, "pg": 4}
+    # 乱数系列の固定用（既存手法のIDは維持し、追加手法は末尾に付与）
+    method_ids = {"pp": 0, "pc": 1, "co": 2, "sgd": 3, "pg": 4, "pp_sgd": 5}
 
     error_normalization = cfg.metric.error_normalization
 
@@ -343,6 +344,66 @@ def tune_methods_for_scenario(
 
             # PPだけ最終時刻評価になっていたため、PC/CO/SGDと同様に
             # 「時系列平均（burn-in以降）」で最適化する
+            try:
+                err_ts = [
+                    _compute_error_for_tuning(S_hat_list[t], S_trunc[t], S_offline)
+                    for t in range(len(S_trunc))
+                ]
+                err_ts_eval = err_ts[burn_in:] if burn_in < len(err_ts) else err_ts
+                mean_err = float(np.mean(err_ts_eval)) if err_ts_eval else penalty_value
+                if not np.isfinite(mean_err):
+                    mean_err = penalty_value
+                errs.append(mean_err)
+            except Exception:
+                errs.append(penalty_value)
+        return float(np.mean(errs))
+
+    def objective_pp_sgd(trial: optuna.trial.Trial) -> float:
+        # PP-SGD: r=q=1固定（更新に1データのみ使用）
+        r_suggested = 1
+        q_suggested = 1
+        rho_suggested = _suggest_from_space(trial, "rho", _resolve_param_space(search_spaces, "pp_sgd", "rho"))
+        mu_lambda_suggested = _suggest_from_space(
+            trial, "mu_lambda", _resolve_param_space(search_spaces, "pp_sgd", "mu_lambda")
+        )
+        lambda_S_suggested = _suggest_from_space(
+            trial, "lambda_S", _resolve_param_space(search_spaces, "pp_sgd", "lambda_S")
+        )
+
+        offline_lambda_l1 = suggest_offline_lambda(trial) if error_normalization == "offline_solution" else None
+        burn_in_cfg = int(getattr(cfg.metric, "burn_in", 0))
+        burn_in = (r_suggested + q_suggested - 2) if burn_in_cfg == -1 else max(0, burn_in_cfg)
+        comp = getattr(cfg, "comparison", None)
+        pp_lookahead_cfg = 0 if comp is None else int(getattr(comp, "pp_lookahead", 0))
+        pp_lookahead = (r_suggested + q_suggested - 2) if pp_lookahead_cfg == -1 else max(0, pp_lookahead_cfg)
+
+        errs = []
+        for run_idx in range(tuning_runs_per_trial):
+            rng = make_rng("pp_sgd", trial.number, run_idx)
+            S_ser, T_mat, U_gen, Y_gen = generator(rng=rng, **generator_kwargs)
+            X = Y_gen[:, :T_tune]
+            U = U_gen[:, :T_tune]
+            S_trunc = S_ser[:T_tune]
+            S0 = np.zeros((N, N))
+            pp_b0_mode = str(getattr(getattr(cfg, "comparison", object()), "pp_init_b0", "ones")).strip()
+            b0 = np.diag(T_mat) if pp_b0_mode == "true_T_diag" else np.ones(N)
+            model = PPExogenousSEM(
+                N,
+                S0,
+                b0,
+                r=r_suggested,
+                q=q_suggested,
+                rho=rho_suggested,
+                mu_lambda=mu_lambda_suggested,
+                lambda_S=lambda_S_suggested,
+                lookahead=int(pp_lookahead),
+            )
+            S_hat_list, _ = model.run(X, U)
+
+            S_offline = None
+            if error_normalization == "offline_solution":
+                S_offline = solve_offline_sem_lasso_batch(X, U, offline_lambda_l1)
+
             try:
                 err_ts = [
                     _compute_error_for_tuning(S_hat_list[t], S_trunc[t], S_offline)
@@ -743,6 +804,7 @@ def tune_methods_for_scenario(
 
     all_method_specs = {
         "pp": {"objective": objective_pp, "callback": None},
+        "pp_sgd": {"objective": objective_pp_sgd, "callback": None},
         "pc": {"objective": objective_pc, "callback": update_pc_shared_from_pc},
         "co": {"objective": objective_co, "callback": update_pc_shared_from_co},
         "sgd": {"objective": objective_sgd, "callback": update_pc_shared_from_sgd},

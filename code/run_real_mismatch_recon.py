@@ -368,6 +368,7 @@ def main() -> None:
 
     # 実行フラグ（実データ設定から）
     run_pp = bool(real_cfg.methods.pp)
+    run_pp_sgd = bool(getattr(real_cfg.methods, "pp_sgd", False))
     run_pc = bool(real_cfg.methods.pc)
     run_co = bool(real_cfg.methods.co)
     run_sgd = bool(real_cfg.methods.sgd)
@@ -415,6 +416,24 @@ def main() -> None:
         S_list, T_list = pp_model.run(X, Z)
         estimates_S["PP"] = S_list
         estimates_Tdiag["PP"] = [np.diag(Tm).copy() for Tm in T_list]
+
+    # PP-SGD（q=1,r=1固定）
+    if run_pp_sgd:
+        S0 = np.zeros((N, N))
+        b0 = np.ones(N)
+        pp_sgd_model = PPExogenousSEM(
+            N,
+            S0,
+            b0,
+            r=1,
+            q=1,
+            rho=hp.pp_sgd.rho,
+            mu_lambda=hp.pp_sgd.mu_lambda,
+            lambda_S=hp.pp_sgd.lambda_S,
+        )
+        S_list, T_list = pp_sgd_model.run(X, Z)
+        estimates_S["PP-SGD"] = S_list
+        estimates_Tdiag["PP-SGD"] = [np.diag(Tm).copy() for Tm in T_list]
 
     # PC / CO / SGD
     def _run_pc_like(
@@ -673,6 +692,7 @@ def main() -> None:
         "methods": {
             "enabled_flags": {
                 "pp": run_pp,
+                "pp_sgd": run_pp_sgd,
                 "pc": run_pc,
                 "co": run_co,
                 "sgd": run_sgd,

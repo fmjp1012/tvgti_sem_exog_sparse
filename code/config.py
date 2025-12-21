@@ -25,6 +25,7 @@ class MethodFlags:
     # ※ デフォルトは全てFalse（CONFIGで明示的にTrueにした手法のみ実行）
     # ※ 設定を変更するにはファイル下部の CONFIG インスタンスを編集してください
     pp: bool = False    # Proposed (PP)
+    pp_sgd: bool = False  # PP-SGD (q=1, r=1固定; 1データ更新)
     pc: bool = False    # Prediction Correction
     co: bool = False    # Correction Only
     sgd: bool = False   # SGD
@@ -151,6 +152,7 @@ class OfflineSearchSpace:
 class SearchSpaces:
     """全手法の探索範囲"""
     pp: PPSearchSpace = field(default_factory=PPSearchSpace)
+    pp_sgd: PPSearchSpace = field(default_factory=PPSearchSpace)
     pc: PCSearchSpace = field(default_factory=PCSearchSpace)
     co: COSearchSpace = field(default_factory=COSearchSpace)
     sgd: SGDSearchSpace = field(default_factory=SGDSearchSpace)
@@ -210,6 +212,8 @@ class PGHyperparams:
 class DefaultHyperparams:
     """全手法のデフォルトハイパーパラメータ"""
     pp: PPHyperparams = field(default_factory=PPHyperparams)
+    # PP-SGD（q=1, r=1固定）: 1データのみで更新する比較用
+    pp_sgd: PPHyperparams = field(default_factory=lambda: PPHyperparams(r=1, q=1))
     pc: PCHyperparams = field(default_factory=PCHyperparams)
     co: COHyperparams = field(default_factory=COHyperparams)
     sgd: SGDHyperparams = field(default_factory=SGDHyperparams)
@@ -702,6 +706,8 @@ def get_enabled_methods() -> List[str]:
     methods = []
     if cfg.methods.pp:
         methods.append("pp")
+    if getattr(cfg.methods, "pp_sgd", False):
+        methods.append("pp_sgd")
     if cfg.methods.pc:
         methods.append("pc")
     if cfg.methods.co:
@@ -735,6 +741,11 @@ def get_search_spaces_dict() -> Dict[str, Dict[str, Dict[str, Any]]]:
             "rho": search_range_to_dict(cfg.search_spaces.pp.rho),
             "mu_lambda": search_range_to_dict(cfg.search_spaces.pp.mu_lambda),
             "lambda_S": search_range_to_dict(cfg.search_spaces.pp.lambda_S),
+        },
+        "pp_sgd": {
+            "rho": search_range_to_dict(cfg.search_spaces.pp_sgd.rho),
+            "mu_lambda": search_range_to_dict(cfg.search_spaces.pp_sgd.mu_lambda),
+            "lambda_S": search_range_to_dict(cfg.search_spaces.pp_sgd.lambda_S),
         },
         "pc": {
             "lambda_reg": search_range_to_dict(cfg.search_spaces.pc.lambda_reg),
@@ -775,6 +786,13 @@ def get_default_hyperparams_dict() -> Dict[str, Dict[str, Any]]:
             "rho": cfg.hyperparams.pp.rho,
             "mu_lambda": cfg.hyperparams.pp.mu_lambda,
             "lambda_S": cfg.hyperparams.pp.lambda_S,
+        },
+        "pp_sgd": {
+            "r": cfg.hyperparams.pp_sgd.r,
+            "q": cfg.hyperparams.pp_sgd.q,
+            "rho": cfg.hyperparams.pp_sgd.rho,
+            "mu_lambda": cfg.hyperparams.pp_sgd.mu_lambda,
+            "lambda_S": cfg.hyperparams.pp_sgd.lambda_S,
         },
         "pc": {
             "lambda_reg": cfg.hyperparams.pc.lambda_reg,
@@ -826,6 +844,7 @@ def print_config_summary() -> None:
     
     print("\n--- 実行する手法 ---")
     print(f"  PP:  {'ON' if cfg.methods.pp else 'OFF'}")
+    print(f"  PP-SGD (q=1,r=1): {'ON' if getattr(cfg.methods, 'pp_sgd', False) else 'OFF'}")
     print(f"  PC:  {'ON' if cfg.methods.pc else 'OFF'}")
     print(f"  CO:  {'ON' if cfg.methods.co else 'OFF'}")
     print(f"  SGD: {'ON' if cfg.methods.sgd else 'OFF'}")

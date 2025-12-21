@@ -257,7 +257,7 @@ class BaseExperimentRunner(ABC):
             - error_means: 各手法の平均誤差
             - last_estimates: 最後の試行の最終推定値
         """
-        methods = ["pp", "pc", "co", "sgd", "pg"]
+        methods = ["pp", "pp_sgd", "pc", "co", "sgd", "pg"]
         error_totals: Dict[str, Optional[np.ndarray]] = {}
         
         # 初期化
@@ -313,6 +313,7 @@ class BaseExperimentRunner(ABC):
             ("pc", "limegreen", "Prediction Correction"),
             ("sgd", "cyan", "SGD"),
             ("pg", "magenta", "ProxGrad"),
+            ("pp_sgd", "orange", "PP-SGD (q=1,r=1)"),
             ("pp", "red", "Proposed (PP)"),
         ]
         
@@ -469,6 +470,10 @@ class BaseExperimentRunner(ABC):
                 "pp": {
                     "enabled": self.flags.pp,
                     "hyperparams": hp_dict["pp"],
+                },
+                "pp_sgd": {
+                    "enabled": getattr(self.flags, "pp_sgd", False),
+                    "hyperparams": hp_dict.get("pp_sgd", {}),
                 },
                 "pc": {
                     "enabled": self.flags.pc,
