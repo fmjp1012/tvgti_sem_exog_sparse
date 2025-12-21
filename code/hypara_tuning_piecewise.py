@@ -21,6 +21,12 @@ def main() -> None:
     parser.add_argument("--K", type=int, default=4, help="区分数")
     parser.add_argument("--tuning_trials", type=int, default=30, help="Optunaの試行回数")
     parser.add_argument("--tuning_runs_per_trial", type=int, default=5, help="各Optuna試行での平均化回数")
+    parser.add_argument(
+        "--methods",
+        type=str,
+        default=None,
+        help="チューニングする手法をカンマ区切りで指定（例: pp または pp,pc）。省略時はconfig.pyで有効な手法。",
+    )
     parser.add_argument("--seed", type=int, default=3, help="乱数シード")
     parser.add_argument("--result_root", type=Path, default=Path("./result"), help="結果保存ルート")
     parser.add_argument("--subdir", type=str, default="exog_sparse_tuning", help="結果保存のサブディレクトリ")
@@ -28,6 +34,10 @@ def main() -> None:
     parser.add_argument("--no_save", action="store_true", help="JSON保存をスキップ")
 
     args = parser.parse_args()
+
+    methods = None
+    if args.methods is not None:
+        methods = [m.strip() for m in args.methods.split(",") if m.strip()]
 
     best, summary = tune_piecewise_all_methods(
         N=args.N,
@@ -39,6 +49,7 @@ def main() -> None:
         tuning_trials=args.tuning_trials,
         tuning_runs_per_trial=args.tuning_runs_per_trial,
         seed=args.seed,
+        methods=methods,
     )
 
     print("推定されたハイパラ:")

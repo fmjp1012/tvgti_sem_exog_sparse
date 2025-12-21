@@ -1,0 +1,40 @@
+{
+  "pp": {
+    "r": 30,
+    "q": 1,
+    "rho": 0.00336929686574267,
+    "mu_lambda": 0.02485687894775785,
+    "lambda_S": 0.002358256037804934
+  },
+  "pp_sgd": {
+    "r": 1,
+    "q": 1,
+    "rho": 0.001,
+    "mu_lambda": 0.05,
+    "lambda_S": 0.01
+  },
+  "pc": {
+    "lambda_reg": 0.001,
+    "alpha": 0.01,
+    "beta": 0.01,
+    "gamma": 0.9,
+    "P": 1,
+    "C": 1
+  },
+  "co": {
+    "beta_co": 0.02
+  },
+  "sgd": {
+    "beta_sgd": 0.0269
+  },
+  "pg": {
+    "lambda_reg": 0.001,
+    "step_scale": 1.0,
+    "step_size": null,
+    "use_fista": true,
+    "use_backtracking": false,
+    "max_iter": 500,
+    "tol": 0.0001
+  },
+  "offline_lambda_l1": 0.0003451459427078159
+}

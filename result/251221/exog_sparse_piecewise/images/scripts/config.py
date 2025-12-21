@@ -575,8 +575,7 @@ CONFIG_MAIN = SimulationConfig(
     # 実行モード
     skip_tuning=False,
     skip_simulation=False,
-    hyperparam_json=None,
-    # hyperparam_json=Path("result/251217/exog_sparse_tuning/piecewise_best_hyperparams_20251217_173357.json"),
+    hyperparam_json=Path("result/251217/exog_sparse_tuning/piecewise_best_hyperparams_20251217_173357.json"),
 )
 
 # =============================================================================

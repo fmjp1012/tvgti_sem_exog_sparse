@@ -23,6 +23,7 @@ LOG_DIR ?= logs
 TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
 
 .PHONY: help config real_config tune_piecewise tune_linear tune_real real run_piecewise run_linear run_real run_real_test piecewise linear \
+        tune-piecewise tune-linear run-piecewise run-linear tune-and-run-piecewise tune-and-run-linear \
         bg_piecewise bg_linear bg_tune_piecewise bg_tune_linear bg_run_piecewise bg_run_linear bg_run_piecewise_hp \
         bg_status bg_stop
 
@@ -37,13 +38,19 @@ help:
 	@echo ""
 	@echo "  make piecewise        # Piecewise: チューニング → シミュレーション"
 	@echo "  make linear           # Linear: チューニング → シミュレーション"
+	@echo "  make tune-and-run-piecewise  # piecewise と同じ（別名）"
+	@echo "  make tune-and-run-linear     # linear と同じ（別名）"
 	@echo ""
 	@echo "  make tune_piecewise   # Piecewise: チューニングのみ"
 	@echo "  make tune_linear      # Linear: チューニングのみ"
+	@echo "  make tune-piecewise   # tune_piecewise と同じ（別名）"
+	@echo "  make tune-linear      # tune_linear と同じ（別名）"
 	@echo "  make tune_real        # Realデータ: チューニング（system mismatch最小化）"
 	@echo ""
 	@echo "  make run_piecewise    # Piecewise: シミュレーションのみ"
 	@echo "  make run_linear       # Linear: シミュレーションのみ"
+	@echo "  make run-piecewise    # run_piecewise と同じ（別名）"
+	@echo "  make run-linear       # run_linear と同じ（別名）"
 	@echo "  make run_real         # Realデータ: mismatch / recon 比較"
 	@echo "  make run_real_test    # Realデータ: 軽量テスト実行 (N/T小)"
 	@echo "  make real             # Realデータ: チューニング → 実行"
@@ -53,6 +60,8 @@ help:
 	@echo "=========================================="
 	@echo "  make bg_piecewise     # Piecewise: バックグラウンドで実行"
 	@echo "  make bg_linear        # Linear: バックグラウンドで実行"
+	@echo "  make bg_tune_piecewise # Piecewise: チューニングのみ (バックグラウンド)"
+	@echo "  make bg_tune_linear    # Linear: チューニングのみ (バックグラウンド)"
 	@echo "  make bg_run_piecewise # Piecewise: シミュレーションのみ (バックグラウンド)"
 	@echo "  make bg_run_piecewise_hp HYPER=path/to.json T=2000  # Piecewise: 指定ハイパラ+Tで実行 (バックグラウンド)"
 	@echo "  make bg_run_linear    # Linear: シミュレーションのみ (バックグラウンド)"
@@ -64,6 +73,12 @@ help:
 	@echo "※ ログは $(LOG_DIR)/ に保存されます"
 	@echo "※ すべての設定は code/config.py で一元管理されています"
 	@echo "※ コマンドライン引数による設定変更は非推奨です"
+	@echo ""
+	@echo "よく使う設定（code/config.py）:"
+	@echo "  - methods: 走らせる手法をON/OFF"
+	@echo "  - tuning.*: チューニングの試行回数など"
+	@echo "  - run.num_trials: 本番の試行回数"
+	@echo "  - hyperparam_json: 既存ハイパラを使う（tune_and_run がチューニングをスキップ）"
 
 config:
 	$(PYTHON) code/config.py
@@ -78,12 +93,10 @@ linear:
 	$(PYTHON) -m code.tune_and_run linear
 
 tune_piecewise:
-	@echo "チューニングのみ実行するには config.py の skip_simulation を True に設定してください"
-	$(PYTHON) -m code.tune_and_run piecewise
+	$(PYTHON) -m code.tune_piecewise
 
 tune_linear:
-	@echo "チューニングのみ実行するには config.py の skip_simulation を True に設定してください"
-	$(PYTHON) -m code.tune_and_run linear
+	$(PYTHON) -m code.tune_linear
 
 tune_real:
 	$(PYTHON) -m code.tune_real
@@ -96,6 +109,25 @@ run_piecewise:
 
 run_linear:
 	$(PYTHON) -m code.run_linear
+
+# ---- エイリアス（覚えやすい名前） ----
+tune-and-run-piecewise: piecewise
+	@:
+
+tune-and-run-linear: linear
+	@:
+
+tune-piecewise: tune_piecewise
+	@:
+
+tune-linear: tune_linear
+	@:
+
+run-piecewise: run_piecewise
+	@:
+
+run-linear: run_linear
+	@:
 
 run_real:
 	$(PYTHON) -m code.run_real_mismatch_recon
@@ -124,6 +156,20 @@ bg_linear: $(LOG_DIR)
 	@echo "PID: $$(cat $(LOG_DIR)/linear.pid)"
 	@echo "ログ確認: tail -f $(LOG_DIR)/linear_$(TIMESTAMP).log"
 
+bg_tune_piecewise: $(LOG_DIR)
+	@echo "バックグラウンドで tune_piecewise を開始します..."
+	@echo "ログファイル: $(LOG_DIR)/tune_piecewise_$(TIMESTAMP).log"
+	@nohup $(PYTHON) -u -m code.tune_piecewise > $(LOG_DIR)/tune_piecewise_$(TIMESTAMP).log 2>&1 & echo $$! > $(LOG_DIR)/tune_piecewise.pid
+	@echo "PID: $$(cat $(LOG_DIR)/tune_piecewise.pid)"
+	@echo "ログ確認: tail -f $(LOG_DIR)/tune_piecewise_$(TIMESTAMP).log"
+
+bg_tune_linear: $(LOG_DIR)
+	@echo "バックグラウンドで tune_linear を開始します..."
+	@echo "ログファイル: $(LOG_DIR)/tune_linear_$(TIMESTAMP).log"
+	@nohup $(PYTHON) -u -m code.tune_linear > $(LOG_DIR)/tune_linear_$(TIMESTAMP).log 2>&1 & echo $$! > $(LOG_DIR)/tune_linear.pid
+	@echo "PID: $$(cat $(LOG_DIR)/tune_linear.pid)"
+	@echo "ログ確認: tail -f $(LOG_DIR)/tune_linear_$(TIMESTAMP).log"
+
 bg_run_piecewise: $(LOG_DIR)
 	@echo "バックグラウンドで run_piecewise を開始します..."
 	@echo "ログファイル: $(LOG_DIR)/run_piecewise_$(TIMESTAMP).log"
@@ -150,7 +196,7 @@ bg_run_linear: $(LOG_DIR)
 
 bg_status:
 	@echo "=== バックグラウンドジョブの状態 ==="
-	@ps aux | grep -E "python.*code\.(tune_and_run|run_)" | grep -v grep || echo "実行中のジョブはありません"
+	@ps aux | grep -E "python.*code\.(tune_and_run|tune_piecewise|tune_linear|run_)" | grep -v grep || echo "実行中のジョブはありません"
 	@echo ""
 	@echo "=== PIDファイル ==="
 	@for f in $(LOG_DIR)/*.pid; do \
