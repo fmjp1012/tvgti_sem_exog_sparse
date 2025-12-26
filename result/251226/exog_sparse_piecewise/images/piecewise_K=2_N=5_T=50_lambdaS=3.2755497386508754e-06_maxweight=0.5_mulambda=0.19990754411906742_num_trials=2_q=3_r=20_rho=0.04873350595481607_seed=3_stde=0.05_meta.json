@@ -1,0 +1,618 @@
+{
+  "created_at": "2025-12-26T15:49:14.602875",
+  "command": [
+    "/home/ito/tvgti_sem_exog_sparse/code/run_piecewise.py",
+    "--hyperparam_json",
+    "result/251226/exog_sparse_tuning/piecewise_best_hyperparams_20251226_154913.json"
+  ],
+  "repro": {
+    "git": {
+      "head": "9a4e5a9908c7639f41251d0433d7e7dced2c3d5f",
+      "branch": "main",
+      "is_dirty": true
+    },
+    "hyperparam_json_content": {
+      "pp": {
+        "r": 20,
+        "q": 3,
+        "rho": 0.04873350595481607,
+        "mu_lambda": 0.19990754411906742,
+        "lambda_S": 3.2755497386508754e-06
+      },
+      "pp_sgd": {
+        "r": 1,
+        "q": 1,
+        "rho": 0.001,
+        "mu_lambda": 0.05,
+        "lambda_S": 0.01
+      },
+      "pc": {
+        "lambda_reg": 0.001,
+        "alpha": 0.01,
+        "beta": 0.01,
+        "gamma": 0.9,
+        "P": 1,
+        "C": 1
+      },
+      "co": {
+        "beta_co": 0.02
+      },
+      "sgd": {
+        "beta_sgd": 0.0269
+      },
+      "pg": {
+        "lambda_reg": 0.001,
+        "step_scale": 1.0,
+        "step_size": null,
+        "use_fista": true,
+        "use_backtracking": false,
+        "max_iter": 500,
+        "tol": 0.0001
+      },
+      "offline_lambda_l1": 0.0005525085084833706
+    }
+  },
+  "config": {
+    "num_trials": 2,
+    "seed_base": 3,
+    "trial_seeds": [
+      3,
+      4
+    ],
+    "N": 5,
+    "T": 50,
+    "sparsity": 0.5,
+    "max_weight": 0.5,
+    "std_e": 0.05,
+    "K": 2
+  },
+  "config_full": {
+    "use_test_config": true,
+    "config_name": "CONFIG_TEST",
+    "config": {
+      "methods": {
+        "pp": true,
+        "pp_sgd": false,
+        "pc": false,
+        "co": false,
+        "sgd": false,
+        "pg": false
+      },
+      "common": {
+        "N": 5,
+        "T": 50,
+        "sparsity": 0.5,
+        "max_weight": 0.5,
+        "std_e": 0.05,
+        "seed": 3
+      },
+      "piecewise": {
+        "K": 2
+      },
+      "linear": {},
+      "data_gen": {
+        "s_type": "random",
+        "t_min": 0.5,
+        "t_max": 1.0,
+        "z_dist": "uniform01"
+      },
+      "tuning": {
+        "tuning_trials": 3,
+        "tuning_runs_per_trial": 1,
+        "truncation_horizon": 30,
+        "tuning_seed": 4
+      },
+      "search_spaces": {
+        "pp": {
+          "r": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              10,
+              20,
+              30,
+              40,
+              50,
+              75,
+              100,
+              150,
+              200
+            ]
+          },
+          "q": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              1,
+              2,
+              3,
+              5,
+              8,
+              10
+            ]
+          },
+          "rho": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "mu_lambda": {
+            "low": 0.01,
+            "high": 2.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "lambda_S": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          }
+        },
+        "pp_sgd": {
+          "r": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              10,
+              20,
+              30,
+              40,
+              50,
+              75,
+              100,
+              150,
+              200
+            ]
+          },
+          "q": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              1,
+              2,
+              3,
+              5,
+              8,
+              10
+            ]
+          },
+          "rho": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "mu_lambda": {
+            "low": 0.0001,
+            "high": 1.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "lambda_S": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          }
+        },
+        "pc": {
+          "lambda_reg": {
+            "low": 1e-05,
+            "high": 0.01,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "alpha": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "beta_pc": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "gamma": {
+            "low": 0.85,
+            "high": 0.999,
+            "log": false,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "P": {
+            "low": 0,
+            "high": 2,
+            "log": false,
+            "type": "int",
+            "step": 1,
+            "choices": null
+          },
+          "C": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              1,
+              2,
+              5
+            ]
+          }
+        },
+        "co": {
+          "alpha": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "beta_co": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "gamma": {
+            "low": 0.85,
+            "high": 0.999,
+            "log": false,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "C": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              1,
+              2,
+              5
+            ]
+          }
+        },
+        "sgd": {
+          "alpha": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "beta_sgd": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          }
+        },
+        "pg": {
+          "lambda_reg": {
+            "low": 1e-05,
+            "high": 0.01,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "step_scale": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "use_fista": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              true,
+              false
+            ]
+          }
+        },
+        "offline": {
+          "offline_lambda_l1": {
+            "low": 0.0001,
+            "high": 1.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          }
+        }
+      },
+      "hyperparams": {
+        "pp": {
+          "r": 50,
+          "q": 5,
+          "rho": 0.001,
+          "mu_lambda": 0.05,
+          "lambda_S": 0.01
+        },
+        "pp_sgd": {
+          "r": 1,
+          "q": 1,
+          "rho": 0.001,
+          "mu_lambda": 0.05,
+          "lambda_S": 0.01
+        },
+        "pc": {
+          "lambda_reg": 0.001,
+          "alpha": 0.01,
+          "beta": 0.01,
+          "gamma": 0.9,
+          "P": 1,
+          "C": 1
+        },
+        "co": {
+          "beta_co": 0.02
+        },
+        "sgd": {
+          "beta_sgd": 0.0269
+        },
+        "pg": {
+          "lambda_reg": 0.001,
+          "step_scale": 1.0,
+          "step_size": null,
+          "use_fista": true,
+          "use_backtracking": false,
+          "max_iter": 500,
+          "tol": 0.0001
+        }
+      },
+      "run": {
+        "num_trials": 2
+      },
+      "metric": {
+        "error_normalization": "offline_solution",
+        "burn_in": 0,
+        "divide_by_n2": false
+      },
+      "comparison": {
+        "pc_model": "exog",
+        "pc_use_true_T_init": true,
+        "pc_T_init_identity_scale": 1.0,
+        "pp_init_b0": "ones",
+        "pp_lookahead": 0
+      },
+      "output": {
+        "result_root": "result",
+        "subdir_piecewise": "exog_sparse_piecewise",
+        "subdir_linear": "exog_sparse_linear",
+        "subdir_tuning": "exog_sparse_tuning"
+      },
+      "skip_tuning": false,
+      "skip_simulation": false,
+      "hyperparam_json": null
+    }
+  },
+  "metric": {
+    "error_normalization": "offline_solution",
+    "offline_lambda_l1": 0.0005525085084833706,
+    "burn_in": 0,
+    "burn_in_effective": 0,
+    "divide_by_n2": false
+  },
+  "comparison": {
+    "pc_model": "exog",
+    "pc_use_true_T_init": true,
+    "pc_T_init_identity_scale": 1.0,
+    "pp_init_b0": "ones",
+    "pp_lookahead": 0,
+    "pp_lookahead_effective": 0
+  },
+  "methods": {
+    "pp": {
+      "enabled": true,
+      "hyperparams": {
+        "r": 20,
+        "q": 3,
+        "rho": 0.04873350595481607,
+        "mu_lambda": 0.19990754411906742,
+        "lambda_S": 3.2755497386508754e-06
+      }
+    },
+    "pp_sgd": {
+      "enabled": false,
+      "hyperparams": {
+        "r": 1,
+        "q": 1,
+        "rho": 0.001,
+        "mu_lambda": 0.05,
+        "lambda_S": 0.01
+      }
+    },
+    "pc": {
+      "enabled": false,
+      "hyperparams": {
+        "lambda_reg": 0.001,
+        "alpha": 0.01,
+        "beta": 0.01,
+        "gamma": 0.9,
+        "P": 1,
+        "C": 1
+      }
+    },
+    "co": {
+      "enabled": false,
+      "hyperparams": {
+        "lambda_reg": 0.001,
+        "alpha": 0.01,
+        "beta_co": 0.02,
+        "gamma": 0.9,
+        "C": 1
+      }
+    },
+    "sgd": {
+      "enabled": false,
+      "hyperparams": {
+        "lambda_reg": 0.001,
+        "alpha": 0.01,
+        "beta_sgd": 0.0269,
+        "C": 1
+      }
+    },
+    "pg": {
+      "enabled": false,
+      "hyperparams": {
+        "lambda_reg": 0.001,
+        "step_scale": 1.0,
+        "step_size": null,
+        "use_fista": true,
+        "use_backtracking": false,
+        "max_iter": 500,
+        "tol": 0.0001
+      }
+    }
+  },
+  "generator": {
+    "function": "code.data_gen.generate_piecewise_X_with_exog",
+    "kwargs": {
+      "s_type": "random",
+      "t_min": 0.5,
+      "t_max": 1.0,
+      "z_dist": "uniform01"
+    }
+  },
+  "results": {
+    "figure": "piecewise_K=2_N=5_T=50_lambdaS=3.2755497386508754e-06_maxweight=0.5_mulambda=0.19990754411906742_num_trials=2_q=3_r=20_rho=0.04873350595481607_seed=3_stde=0.05.png",
+    "figure_path": "result/251226/exog_sparse_piecewise/images/piecewise_K=2_N=5_T=50_lambdaS=3.2755497386508754e-06_maxweight=0.5_mulambda=0.19990754411906742_num_trials=2_q=3_r=20_rho=0.04873350595481607_seed=3_stde=0.05.png",
+    "figure_burnin": null,
+    "figure_burnin_path": null,
+    "summary_means": {
+      "full_mean": {
+        "pp": 0.26301726997783187,
+        "pp_sgd": null,
+        "pc": null,
+        "co": null,
+        "sgd": null,
+        "pg": null
+      },
+      "post_burnin_mean": {
+        "pp": 0.26301726997783187,
+        "pp_sgd": null,
+        "pc": null,
+        "co": null,
+        "sgd": null,
+        "pg": null
+      }
+    },
+    "metrics": {
+      "pp": [
+        0.36025371727918626,
+        0.34820151982070063,
+        0.34137463271987273,
+        0.33474818255096084,
+        0.3278564276433435,
+        0.32070110139033503,
+        0.31356211556987745,
+        0.30669283673235925,
+        0.30001657360625805,
+        0.2934188652341832,
+        0.28703310745213045,
+        0.2809112110203614,
+        0.2750271062480029,
+        0.26933395610605754,
+        0.2638713675238014,
+        0.2588117147758196,
+        0.2542155104701614,
+        0.2500286692736626,
+        0.24615410787710276,
+        0.24242802499143626,
+        0.23869891635627186,
+        0.23462459980184866,
+        0.23015495845688635,
+        0.22518284241447567,
+        0.2200990314596136,
+        0.36658534762015005,
+        0.3681054534170417,
+        0.3569524742507172,
+        0.34422856265254986,
+        0.3282469344537607,
+        0.3149874853377155,
+        0.29706113770972536,
+        0.28267883558329143,
+        0.2680743067693921,
+        0.25600160425904966,
+        0.24472116754873863,
+        0.2346653644676412,
+        0.2259956314275849,
+        0.21791620090105523,
+        0.21031130407387189,
+        0.2034076641215427,
+        0.19701043081631261,
+        0.1915611294831704,
+        0.18705286701337887,
+        0.1816371710753243,
+        0.1774511869770608,
+        0.17409002155436695,
+        0.1702028532521282,
+        0.16622375343384613,
+        0.16229351391746732
+      ],
+      "pp_sgd": null,
+      "pc": null,
+      "co": null,
+      "sgd": null,
+      "pg": null
+    }
+  },
+  "snapshots": {
+    "run_piecewise": "result/251226/exog_sparse_piecewise/images/scripts/run_piecewise.py",
+    "config": "result/251226/exog_sparse_piecewise/images/scripts/config.py",
+    "data_gen": "result/251226/exog_sparse_piecewise/images/scripts/data_gen.py",
+    "hyperparams_json": "result/251226/exog_sparse_piecewise/images/scripts/piecewise_best_hyperparams_20251226_154913.json"
+  },
+  "hyperparam_json": "result/251226/exog_sparse_tuning/piecewise_best_hyperparams_20251226_154913.json",
+  "result_dir": "result/251226/exog_sparse_piecewise/images"
+}
