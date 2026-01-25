@@ -31,6 +31,7 @@ import argparse
 import json
 import math
 import sys
+import time
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -320,6 +321,7 @@ def main() -> None:
     real_cfg = get_real_config()
 
     apply_style(use_latex=True, font_family="Times New Roman", base_font_size=15)
+    run_wall_start = time.perf_counter()
 
     hyperparam_path = args.hyperparam_json if args.hyperparam_json is not None else real_cfg.hyperparam_json
     loaded_hp = load_hyperparams_json(hyperparam_path)
@@ -705,6 +707,9 @@ def main() -> None:
             "figures": fig_paths,
             "metrics": metrics,
             "summaries": metrics["summaries"],
+            "timings": {
+                "overall_sec": float(time.perf_counter() - run_wall_start),
+            },
         },
         "snapshots": script_copies,
         "result_dir": str(result_dir),

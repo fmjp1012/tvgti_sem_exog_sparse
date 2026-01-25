@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import time
 from pathlib import Path
 from typing import Optional
 
@@ -12,6 +13,7 @@ from code.hyperparam_tuning import (
 
 
 def main() -> None:
+    run_wall_start = time.perf_counter()
     parser = argparse.ArgumentParser(description="ピースワイズシナリオのハイパラ調整ユーティリティ")
     parser.add_argument("--N", type=int, default=20, help="ノード数")
     parser.add_argument("--T", type=int, default=1000, help="系列長")
@@ -66,6 +68,9 @@ def main() -> None:
     else:
         metadata = {
             "scenario": "piecewise",
+            "timings": {
+                "overall_sec": float(time.perf_counter() - run_wall_start),
+            },
             "arguments": {
                 "N": args.N,
                 "T": args.T,
@@ -97,4 +102,3 @@ def main() -> None:
 
 if __name__ == '__main__':
     main()
-

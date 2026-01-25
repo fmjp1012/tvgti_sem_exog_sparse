@@ -1,6 +1,7 @@
 import os
 import sys
 import datetime
+import time
 import argparse
 import json
 import cvxpy as cp
@@ -22,6 +23,7 @@ from models.tvgti_pc.time_varying_sem import TimeVaryingSEMWithL1Correction as P
 def main():
     # プロット設定
     apply_style(use_latex=True, font_family="Times New Roman", base_font_size=15)
+    run_wall_start = time.perf_counter()
 
     # パラメータ
     N = 20
@@ -261,6 +263,9 @@ def main():
         "results": {
             "figure": filename,
             "figure_path": str(figure_path),
+            "timings": {
+                "overall_sec": float(time.perf_counter() - run_wall_start),
+            },
             "metrics": {
                 "pp_fro": err_pp,
                 "pc_fro": err_pc,

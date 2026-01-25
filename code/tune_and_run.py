@@ -17,6 +17,7 @@ from __future__ import annotations
 import copy
 import subprocess
 import sys
+import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 import datetime as dt
@@ -164,6 +165,7 @@ def run_simulation(scenario: str, hyperparam_path: Path, cfg: SimulationConfig) 
 
 def main() -> None:
     """メイン処理"""
+    run_wall_start = time.perf_counter()
     # シナリオを引数から取得
     if len(sys.argv) < 2:
         print("使用方法: python -m code.tune_and_run <scenario>")
@@ -204,6 +206,9 @@ def main() -> None:
             "created_at": dt.datetime.now().isoformat(),
             "command": sys.argv,
             "scenario": scenario,
+            "timings": {
+                "overall_sec": float(time.perf_counter() - run_wall_start),
+            },
             "config": {
                 "common": {
                     "N": cfg.common.N,

@@ -1,6 +1,7 @@
 import os
 import sys
 import datetime
+import time
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -16,6 +17,7 @@ from utils.io.results import create_result_dir, backup_script, make_result_filen
 
 def main():
     apply_style(use_latex=True, font_family="Times New Roman", base_font_size=15)
+    run_wall_start = time.perf_counter()
 
     N = 20
     T = 1000
@@ -167,6 +169,9 @@ def main():
         "results": {
             "figure": filename,
             "figure_path": str(figure_path),
+            "timings": {
+                "overall_sec": float(time.perf_counter() - run_wall_start),
+            },
             "metrics": {
                 "pp": err_pp,
                 "pc": err_pc,

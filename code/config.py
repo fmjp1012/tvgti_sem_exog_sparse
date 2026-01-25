@@ -412,7 +412,7 @@ class SimulationConfig:
 # True: テスト用の軽量設定（プログラム動作確認用、すぐに終わる）
 # False: 本番用設定（実際のシミュレーション用）
 # USE_TEST_CONFIG = True
-USE_TEST_CONFIG = False
+USE_TEST_CONFIG = True
 
 # =============================================================================
 # ★★★ 設定を変更するにはここを編集してください ★★★

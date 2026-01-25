@@ -12,6 +12,7 @@ Linear シナリオ: ハイパーパラメータ **チューニングのみ** �
 from __future__ import annotations
 
 import datetime as dt
+import time
 from pathlib import Path
 
 from code.config import get_config, get_enabled_methods
@@ -19,6 +20,7 @@ from code.hyperparam_tuning import save_best_hyperparams, tune_linear_all_method
 
 
 def main() -> None:
+    run_wall_start = time.perf_counter()
     cfg = get_config()
     enabled_methods = get_enabled_methods()
     if not enabled_methods:
@@ -31,6 +33,9 @@ def main() -> None:
     metadata = {
         "created_at": dt.datetime.now().isoformat(),
         "scenario": "linear",
+        "timings": {
+            "overall_sec": float(time.perf_counter() - run_wall_start),
+        },
         "config": {
             "common": {
                 "N": cfg.common.N,
@@ -71,4 +76,3 @@ def main() -> None:
 
 if __name__ == "__main__":
     main()
-

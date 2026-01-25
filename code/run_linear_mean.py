@@ -1,6 +1,7 @@
 import os
 import sys
 import datetime
+import time
 
 import numpy as np
 import matplotlib.pyplot as plt
@@ -8,6 +9,7 @@ from pathlib import Path
 from tqdm import tqdm
 from tqdm_joblib import tqdm_joblib
 from joblib import Parallel, delayed
+from typing import Dict, Optional
 
 
 from code.data_gen import generate_linear_X_with_exog
@@ -19,6 +21,7 @@ from utils.io.results import create_result_dir, backup_script, make_result_filen
 
 def main():
     apply_style(use_latex=True, font_family="Times New Roman", base_font_size=15)
+    run_wall_start = time.perf_counter()
 
     run_pc_flag = True
     run_co_flag = True
@@ -49,6 +52,7 @@ def main():
     beta_sgd = 0.0269
 
     def run_trial(trial_seed: int):
+        t0 = time.perf_counter()
         rng = np.random.default_rng(trial_seed)
         S_series, T_mat, Z, Y = generate_linear_X_with_exog(
             N=N,
@@ -62,6 +66,7 @@ def main():
             z_dist="uniform01",
             rng=rng,
         )
+        t1 = time.perf_counter()
         errors = {}
         if run_pp_flag:
             S0 = np.zeros((N, N)); b0 = np.ones(N)
@@ -135,7 +140,13 @@ def main():
                 for t in range(T)
             ]
             errors['sgd'] = error_sgd
-        return errors
+        t2 = time.perf_counter()
+        timing = {
+            "total_sec": t2 - t0,
+            "data_gen_sec": t1 - t0,
+            "methods_sec": t2 - t1,
+        }
+        return errors, timing
 
     trial_seeds = [seed + i for i in range(num_trials)]
     error_pp_total = np.zeros(T) if run_pp_flag else None
@@ -146,7 +157,9 @@ def main():
     with tqdm_joblib(tqdm(desc="Progress", total=num_trials)):
         results = Parallel(n_jobs=-1, batch_size=1, prefer="threads")(delayed(run_trial)(ts) for ts in trial_seeds)
 
-    for errs in results:
+    trial_timings: Dict[str, Dict[str, float]] = {}
+    for (errs, timing), trial_seed in zip(results, trial_seeds):
+        trial_timings[str(trial_seed)] = timing
         if run_pp_flag:
             error_pp_total += np.array(errs['pp'])
         if run_pc_flag:
@@ -164,6 +177,17 @@ def main():
         error_co_mean = error_co_total / num_trials
     if run_sgd_flag:
         error_sgd_mean = error_sgd_total / num_trials
+
+    timing_summary: Dict[str, Optional[float]] = {}
+    if trial_timings:
+        totals = [v.get("total_sec", 0.0) for v in trial_timings.values()]
+        timing_summary = {
+            "total_sec_sum": float(np.sum(totals)) if totals else None,
+            "total_sec_mean": float(np.mean(totals)) if totals else None,
+            "total_sec_median": float(np.median(totals)) if totals else None,
+            "total_sec_min": float(np.min(totals)) if totals else None,
+            "total_sec_max": float(np.max(totals)) if totals else None,
+        }
 
     plt.figure(figsize=(10, 6))
     if run_co_flag:
@@ -240,6 +264,11 @@ def main():
         "results": {
             "figure": filename,
             "figure_path": str(figure_path),
+            "timings": {
+                "trial_sec": trial_timings,
+                "summary": timing_summary,
+                "overall_sec": float(time.perf_counter() - run_wall_start),
+            },
             "metrics": {
                 "pp": error_pp_mean.tolist() if run_pp_flag else None,
                 "pc": error_pc_mean.tolist() if run_pc_flag else None,
