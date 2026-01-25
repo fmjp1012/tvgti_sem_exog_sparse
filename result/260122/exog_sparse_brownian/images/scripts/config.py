@@ -342,8 +342,6 @@ class OutputParams:
     subdir_piecewise: str = "exog_sparse_piecewise"
     subdir_linear: str = "exog_sparse_linear"
     subdir_tuning: str = "exog_sparse_tuning"
-    save_heatmap: bool = True  # ヒートマップ画像を保存するか
-    save_sim_data: bool = False  # 生成データ/乱数状態を保存するか
 
 
 # =============================================================================
@@ -556,7 +554,7 @@ CONFIG_MAIN = SimulationConfig(
     
     # 実行設定
     run=RunParams(
-        num_trials=100,
+        num_trials=1,
     ),
     
     # 評価指標設定
@@ -587,7 +585,6 @@ CONFIG_MAIN = SimulationConfig(
         subdir_piecewise="exog_sparse_piecewise",
         subdir_linear="exog_sparse_linear",
         subdir_tuning="exog_sparse_tuning",
-        save_sim_data=True,
     ),
     
     # 実行モード
@@ -948,3 +945,4 @@ def print_config_summary() -> None:
 if __name__ == "__main__":
     # 設定ファイルを直接実行した場合は設定サマリーを表示
     print_config_summary()
+

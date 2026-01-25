@@ -60,6 +60,8 @@ class TrialResult:
     """試行結果"""
     errors: Dict[str, List[float]] = field(default_factory=dict)
     estimates_final: Dict[str, np.ndarray] = field(default_factory=dict)
+    trial_seed: Optional[int] = None
+    data_path: Optional[str] = None
 
 
 class MethodExecutor:
@@ -491,4 +493,3 @@ class MethodExecutor:
                 result.errors[key][0] = float(baseline0)
         
         return result
-

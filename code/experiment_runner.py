@@ -34,6 +34,7 @@ from utils.formatting import fmt_value, print_block
 from utils.io.plotting import apply_style, plot_heatmaps
 from utils.io.results import backup_script, create_result_dir, make_result_filename, save_json
 from utils.offline_solver import solve_offline_sem_lasso_batch
+from utils.repro import collect_environment_info, to_jsonable
 
 
 @dataclass
@@ -106,6 +107,8 @@ class BaseExperimentRunner(ABC):
         self.error_normalization = self.cfg.metric.error_normalization
         self.burn_in_cfg = int(getattr(self.cfg.metric, "burn_in", 0))
         self.divide_by_n2 = bool(getattr(self.cfg.metric, "divide_by_n2", False))
+        self.save_sim_data = bool(getattr(self.cfg.output, "save_sim_data", False))
+        self.data_dir: Optional[Path] = None
 
     @abstractmethod
     def get_scenario_name(self) -> str:
@@ -204,6 +207,31 @@ class BaseExperimentRunner(ABC):
         })
         print("------------------------------")
 
+    def _save_trial_data(
+        self,
+        trial_seed: int,
+        rng_state: Dict[str, Any],
+        S_series: List[np.ndarray],
+        T_mat: np.ndarray,
+        Z: np.ndarray,
+        Y: np.ndarray,
+    ) -> Optional[str]:
+        if not self.save_sim_data or self.data_dir is None:
+            return None
+        data_path = self.data_dir / f"trial_seed={trial_seed}.npz"
+        S_series_arr = np.asarray(S_series)
+        rng_state_json = json.dumps(to_jsonable(rng_state), ensure_ascii=False)
+        np.savez_compressed(
+            data_path,
+            S_series=S_series_arr,
+            T_mat=T_mat,
+            Z=Z,
+            Y=Y,
+            rng_state_json=np.array(rng_state_json),
+            trial_seed=np.array(trial_seed),
+        )
+        return str(data_path)
+
     def run_trial(self, trial_seed: int) -> TrialResult:
         """
         単一の試行を実行する。
@@ -219,7 +247,9 @@ class BaseExperimentRunner(ABC):
             試行結果
         """
         rng = np.random.default_rng(trial_seed)
+        rng_state = rng.bit_generator.state
         S_series, T_mat, Z, Y = self.generate_data(rng)
+        data_path = self._save_trial_data(trial_seed, rng_state, S_series, T_mat, Z, Y)
         
         # オフライン解を計算（必要な場合）
         S_offline = None
@@ -238,7 +268,10 @@ class BaseExperimentRunner(ABC):
             divide_by_n2=bool(getattr(self.cfg.metric, "divide_by_n2", False)),
         )
         
-        return executor.execute_all(Y, Z, S_series, T_mat, S_offline)
+        result = executor.execute_all(Y, Z, S_series, T_mat, S_offline)
+        result.trial_seed = trial_seed
+        result.data_path = data_path
+        return result
 
     def aggregate_results(
         self, results: List[TrialResult]
@@ -305,6 +338,9 @@ class BaseExperimentRunner(ABC):
             burn_in = int(getattr(self.hyperparams.pp, "r", 0)) + int(getattr(self.hyperparams.pp, "q", 0)) - 2
         burn_in = max(0, int(burn_in))
 
+        # ---------------------------------------------------------
+        # Plot 1: Standard Metric (as configured)
+        # ---------------------------------------------------------
         plt.figure(figsize=(10, 6))
         
         # プロット順序と色を定義
@@ -332,13 +368,68 @@ class BaseExperimentRunner(ABC):
         else:
             ylabel = "Average NSE"
         if self.divide_by_n2:
-            ylabel = ylabel + " / N^2"
+            ylabel = ylabel + " / $N^2$"
         plt.ylabel(ylabel)
         
         plt.grid(True, which="both")
         plt.legend()
+        # plt.title(f"{ylabel} (N={self.N}, T={self.T})")
         plt.savefig(str(save_path))
-        plt.show()
+        plt.close() # Close to avoid memory leaks
+
+        # ---------------------------------------------------------
+        # Plot 2: Normalized by N^2 (explicitly if not already done)
+        # ---------------------------------------------------------
+        # If divide_by_n2 was False, we might want to see the version divided by N^2.
+        # If divide_by_n2 was True, we might want to see the raw version?
+        # Requirement: "可能なら同一条件で「NSE」「NSE/(ノード数^2)」を併記して比較しやすくする"
+        # So I will forcefully produce the "other" one or both systematically.
+        
+        # Let's produce the complementary plot.
+        # If current is raw, produce normalized.
+        # If current is normalized, produce raw.
+        
+        is_currently_divided = self.divide_by_n2
+        
+        # Create a helper to plot
+        def plot_metric(divide: bool, suffix: str):
+            plt.figure(figsize=(10, 6))
+            for method, color, label in plot_order:
+                if error_means.get(method) is not None:
+                    data = error_means[method].copy()
+                    if divide and not is_currently_divided:
+                        data /= (self.N**2)
+                    elif not divide and is_currently_divided:
+                        data *= (self.N**2)
+                    plt.plot(data, color=color, label=label)
+            
+            plt.yscale("log")
+            plt.xlim(left=0, right=self.T)
+            plt.xlabel("t")
+            
+            if self.error_normalization == "offline_solution":
+                base_label = "Average Error Ratio (vs Offline)"
+            else:
+                base_label = "Average NSE"
+            
+            y_lab = base_label + " / $N^2$" if divide else base_label
+            plt.ylabel(y_lab)
+            plt.grid(True, which="both")
+            plt.legend()
+            # plt.title(f"{y_lab} (N={self.N}, T={self.T})")
+            
+            p = save_path.with_name(f"{save_path.stem}{suffix}{save_path.suffix}")
+            plt.savefig(str(p))
+            plt.close()
+
+        # Generate the "other" plot
+        if self.divide_by_n2:
+            # Current is divided, generate raw
+            plot_metric(divide=False, suffix="_raw")
+        else:
+            # Current is raw, generate divided
+            plot_metric(divide=True, suffix="_divN2")
+
 
         # burn-in 以降だけを見せる図も保存（提案法の“立ち上がり”問題を切り分ける）
         if burn_in > 0:
@@ -368,6 +459,7 @@ class BaseExperimentRunner(ABC):
         filename: str,
         error_means: Dict[str, Optional[np.ndarray]],
         trial_seeds: List[int],
+        data_index: Optional[Dict[str, str]] = None,
     ) -> None:
         """
         メタデータを保存する。
@@ -435,6 +527,20 @@ class BaseExperimentRunner(ABC):
             "is_dirty": bool(_git(["git", "status", "--porcelain"])),
         }
 
+        env_info = collect_environment_info(
+            package_names=[
+                "numpy",
+                "scipy",
+                "cvxpy",
+                "optuna",
+                "matplotlib",
+                "joblib",
+                "tqdm",
+                "tqdm-joblib",
+                "networkx",
+            ]
+        )
+
         # ハイパーパラメータを辞書形式に変換
         hp_dict = hyperparams_to_dict(self.hyperparams)
         
@@ -445,6 +551,7 @@ class BaseExperimentRunner(ABC):
             "repro": {
                 "git": git_info,
                 "hyperparam_json_content": hyperparam_json_content,
+                "environment": env_info,
             },
             "scenario": self.get_scenario_name(),
             "config": {
@@ -509,6 +616,20 @@ class BaseExperimentRunner(ABC):
                     for method, err in error_means.items()
                 },
             },
+            "data": {
+                "saved": bool(self.save_sim_data),
+                "dir": str(self.data_dir) if self.data_dir is not None else None,
+                "files": data_index or {},
+                "format": "npz",
+                "contents": [
+                    "S_series",
+                    "T_mat",
+                    "Z",
+                    "Y",
+                    "rng_state_json",
+                    "trial_seed",
+                ],
+            },
             "snapshots": script_copies,
             "hyperparam_json": str(self.hyperparam_path) if self.hyperparam_path else None,
             "result_dir": str(result_dir),
@@ -531,6 +652,19 @@ class BaseExperimentRunner(ABC):
         
         # サマリー表示
         self.print_summary()
+
+        # 結果ディレクトリ作成（trialデータ保存のため早めに作成）
+        result_dir = create_result_dir(
+            self.cfg.output.result_root,
+            self.get_output_subdir(),
+            extra_tag="images",
+        )
+        self.result_dir = Path(result_dir)
+        if self.save_sim_data:
+            self.data_dir = self.result_dir / "data"
+            self.data_dir.mkdir(parents=True, exist_ok=True)
+        else:
+            self.data_dir = None
         
         # 試行シード生成
         trial_seeds = [self.seed + i for i in range(self.num_trials)]
@@ -543,13 +677,12 @@ class BaseExperimentRunner(ABC):
         
         # 結果集計
         error_means, last_estimates = self.aggregate_results(results)
-        
-        # 結果ディレクトリ作成
-        result_dir = create_result_dir(
-            self.cfg.output.result_root,
-            self.get_output_subdir(),
-            extra_tag="images",
-        )
+
+        data_index: Dict[str, str] = {}
+        if self.save_sim_data:
+            for result in results:
+                if result.trial_seed is not None and result.data_path is not None:
+                    data_index[str(result.trial_seed)] = result.data_path
         
         # ファイル名生成
         filename_params = {
@@ -578,7 +711,8 @@ class BaseExperimentRunner(ABC):
         self.plot_results(error_means, figure_path)
         
         # ヒートマップ表示
-        if last_estimates is not None:
+        cfg = get_config()
+        if cfg.output.save_heatmap and last_estimates is not None:
             heatmap_filename = filename.replace(".png", "_heatmap.png")
             plot_heatmaps(
                 matrices=last_estimates,
@@ -588,7 +722,7 @@ class BaseExperimentRunner(ABC):
             )
         
         # メタデータ保存
-        self.save_metadata(result_dir, filename, error_means, trial_seeds)
+        self.save_metadata(result_dir, filename, error_means, trial_seeds, data_index=data_index)
         
         return ExperimentResult(
             error_means=error_means,
@@ -596,4 +730,3 @@ class BaseExperimentRunner(ABC):
             result_dir=Path(result_dir),
             figure_path=figure_path,
         )
-

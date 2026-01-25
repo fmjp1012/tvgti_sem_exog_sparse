@@ -342,8 +342,6 @@ class OutputParams:
     subdir_piecewise: str = "exog_sparse_piecewise"
     subdir_linear: str = "exog_sparse_linear"
     subdir_tuning: str = "exog_sparse_tuning"
-    save_heatmap: bool = True  # ヒートマップ画像を保存するか
-    save_sim_data: bool = False  # 生成データ/乱数状態を保存するか
 
 
 # =============================================================================
@@ -403,7 +401,7 @@ class SimulationConfig:
 # True: テスト用の軽量設定（プログラム動作確認用、すぐに終わる）
 # False: 本番用設定（実際のシミュレーション用）
 # USE_TEST_CONFIG = True
-USE_TEST_CONFIG = False
+USE_TEST_CONFIG = True
 
 # =============================================================================
 # ★★★ 設定を変更するにはここを編集してください ★★★
@@ -424,7 +422,7 @@ CONFIG_MAIN = SimulationConfig(
     # シナリオ共通パラメータ
     common=CommonParams(
         N=20,              # ノード数（行列Sは N×N）
-        T=12000,           # ユーザー指定: 12000
+        T=10000,            # 時系列長（プロット横軸は t=0..T-1）
         sparsity=0.7,      # スパース性（0要素の割合）
         max_weight=0.5,    # Sの非ゼロ重みの上限（生成時）
         std_e=0.05,        # 観測ノイズの標準偏差
@@ -433,7 +431,7 @@ CONFIG_MAIN = SimulationConfig(
     
     # Piecewiseシナリオのパラメータ
     piecewise=PiecewiseParams(
-        K=2,               # ユーザー指定: 変化あり
+        K=1,               # 区間数（S(t)が定値な区間の数。K=1ならSは全期間一定）
     ),
 
     # Linearシナリオのパラメータ（現状パラメータなしだが明示）
@@ -441,7 +439,7 @@ CONFIG_MAIN = SimulationConfig(
 
     # Brownianシナリオのパラメータ
     brownian=BrownianParams(
-        K=2,
+        K=5,
         std_S=0.05,
     ),
     
@@ -563,7 +561,7 @@ CONFIG_MAIN = SimulationConfig(
     # "true_value": 真の値のノルムで割る（従来の方法）
     # "offline_solution": オフライン解のノルムで割る（offline_lambda_l1はOptunaで自動探索）
     metric=MetricParams(
-        error_normalization="true_value",  # メタデータより
+        error_normalization="true_value",  # 誤差の正規化方法（MetricParamsの説明参照）
         # error_normalization="offline_solution",
         # PPは序盤の更新が弱く出やすいので、自動burn-inを推奨（r+q-2）
         burn_in=-1,                        # -1なら burn_in=r+q-2（“立ち上がり”区間を評価から除外）
@@ -587,11 +585,10 @@ CONFIG_MAIN = SimulationConfig(
         subdir_piecewise="exog_sparse_piecewise",
         subdir_linear="exog_sparse_linear",
         subdir_tuning="exog_sparse_tuning",
-        save_sim_data=True,
     ),
     
     # 実行モード
-    skip_tuning=True,
+    skip_tuning=False,
     skip_simulation=False,
     # ppだけ 251221、他手法は 251217 のハイパラにした “マージ済みJSON”
     hyperparam_json=Path("result/251221/exog_sparse_piecewise/images/scripts/piecewise_hyperparams_pp251221_others251217.json"),
@@ -948,3 +945,4 @@ def print_config_summary() -> None:
 if __name__ == "__main__":
     # 設定ファイルを直接実行した場合は設定サマリーを表示
     print_config_summary()
+

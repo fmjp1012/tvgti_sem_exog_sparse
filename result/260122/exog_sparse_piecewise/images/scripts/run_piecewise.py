@@ -36,7 +36,6 @@ from utils.io.results import backup_script, create_result_dir, make_result_filen
 from utils.offline_solver import solve_offline_sem_lasso_batch
 from utils.metrics import compute_error_series
 from utils.metrics import compute_normalized_error
-from utils.repro import collect_environment_info, to_jsonable
 
 
 def _get_git_info(repo_root: Path) -> Dict[str, object]:
@@ -329,38 +328,6 @@ def main() -> None:
     pp_lookahead = (int(r) + int(q) - 2) if pp_lookahead_cfg == -1 else max(0, int(pp_lookahead_cfg))
     pp_sgd_lookahead = (int(r_pp_sgd) + int(q_pp_sgd) - 2) if pp_lookahead_cfg == -1 else max(0, int(pp_lookahead_cfg))
 
-    # 結果ディレクトリ作成（trialデータ保存のため早めに作成）
-    result_dir = create_result_dir(cfg.output.result_root, cfg.output.subdir_piecewise, extra_tag='images')
-    save_sim_data = bool(getattr(cfg.output, "save_sim_data", False))
-    data_dir: Optional[Path] = None
-    if save_sim_data:
-        data_dir = Path(result_dir) / "data"
-        data_dir.mkdir(parents=True, exist_ok=True)
-
-    def _save_trial_data(
-        trial_seed: int,
-        rng_state: Dict[str, Any],
-        S_series: list[np.ndarray],
-        T_mat: np.ndarray,
-        Z: np.ndarray,
-        Y: np.ndarray,
-    ) -> Optional[str]:
-        if not save_sim_data or data_dir is None:
-            return None
-        data_path = Path(data_dir) / f"trial_seed={trial_seed}.npz"
-        S_series_arr = np.asarray(S_series)
-        rng_state_json = json.dumps(to_jsonable(rng_state), ensure_ascii=False)
-        np.savez_compressed(
-            data_path,
-            S_series=S_series_arr,
-            T_mat=T_mat,
-            Z=Z,
-            Y=Y,
-            rng_state_json=np.array(rng_state_json),
-            trial_seed=np.array(trial_seed),
-        )
-        return str(data_path)
-
     def _pc_T_init(T_true: np.ndarray) -> np.ndarray:
         return T_true if pc_use_true_T else (np.eye(N) * pc_T_scale)
 
@@ -371,7 +338,6 @@ def main() -> None:
     
     def run_trial(trial_seed: int):
         rng = np.random.default_rng(trial_seed)
-        rng_state = rng.bit_generator.state
         S_series, B_true, U, Y = generate_piecewise_X_with_exog(
             N=N,
             T=T,
@@ -385,7 +351,6 @@ def main() -> None:
             z_dist=cfg.data_gen.z_dist,
             rng=rng,
         )
-        data_path = _save_trial_data(trial_seed, rng_state, S_series, B_true, U, Y)
         errors = {}
         estimates_final = {"True": S_series[-1]}
         
@@ -512,7 +477,7 @@ def main() -> None:
             if errors[k]:
                 errors[k][0] = float(baseline0)
         
-        return errors, estimates_final, data_path
+        return errors, estimates_final
     
     trial_seeds = [seed + i for i in range(num_trials)]
     error_pp_total = np.zeros(T) if run_pp_flag else None
@@ -528,8 +493,7 @@ def main() -> None:
         )
     
     last_estimates = None
-    data_index: Dict[str, str] = {}
-    for (errs, estimates_final, data_path), trial_seed in zip(results, trial_seeds):
+    for errs, estimates_final in results:
         if run_pp_flag:
             error_pp_total += np.array(errs['pp'])
         if run_pp_sgd_flag:
@@ -543,8 +507,6 @@ def main() -> None:
         if run_pg_flag:
             error_pg_total += np.array(errs['pg'])
         last_estimates = estimates_final
-        if data_path is not None:
-            data_index[str(trial_seed)] = data_path
     
     error_pp_mean = error_pp_total / num_trials if run_pp_flag else None
     error_pp_sgd_mean = error_pp_sgd_total / num_trials if run_pp_sgd_flag else None
@@ -618,6 +580,7 @@ def main() -> None:
         suffix=".png",
     )
     print(filename)
+    result_dir = create_result_dir(cfg.output.result_root, cfg.output.subdir_piecewise, extra_tag='images')
     plt.tight_layout()
     plt.savefig(str(Path(result_dir) / filename), bbox_inches='tight')
     plt.show()
@@ -657,8 +620,7 @@ def main() -> None:
     
     # ヒートマップ表示（最後の試行の最終時刻）
     # 3種類のヒートマップを生成：全体、推定のみ、差分
-    cfg = get_config()
-    if cfg.output.save_heatmap and last_estimates is not None:
+    if last_estimates is not None:
         heatmap_filename = filename.replace(".png", "_heatmap.png")
         use_offline_ref = error_normalization == "offline_solution"
         plot_heatmaps_suite(
@@ -690,20 +652,6 @@ def main() -> None:
     if hyperparam_path is not None and hyperparam_path.is_file():
         hyper_copy = backup_script(hyperparam_path, scripts_dir)
         script_copies["hyperparams_json"] = str(hyper_copy)
-
-    env_info = collect_environment_info(
-        package_names=[
-            "numpy",
-            "scipy",
-            "cvxpy",
-            "optuna",
-            "matplotlib",
-            "joblib",
-            "tqdm",
-            "tqdm-joblib",
-            "networkx",
-        ]
-    )
     
     metadata = {
         "created_at": run_started_at.isoformat(),
@@ -713,7 +661,6 @@ def main() -> None:
             "git": _get_git_info(Path(__file__).resolve().parents[1]),
             # 与えたハイパラJSONの中身（パスが移動しても再現できるように）
             "hyperparam_json_content": loaded_hyperparams,
-            "environment": env_info,
         },
         "config": {
             "num_trials": num_trials,
@@ -777,20 +724,6 @@ def main() -> None:
                 "sgd": error_sgd_mean.tolist() if run_sgd_flag else None,
                 "pg": error_pg_mean.tolist() if run_pg_flag else None,
             },
-        },
-        "data": {
-            "saved": bool(save_sim_data),
-            "dir": str(data_dir) if data_dir is not None else None,
-            "files": data_index,
-            "format": "npz",
-            "contents": [
-                "S_series",
-                "T_mat",
-                "Z",
-                "Y",
-                "rng_state_json",
-                "trial_seed",
-            ],
         },
         "snapshots": script_copies,
         "hyperparam_json": str(hyperparam_path) if hyperparam_path is not None else None,

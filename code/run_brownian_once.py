@@ -6,6 +6,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from pathlib import Path
 
+from code.config import get_config
 from code.data_gen import generate_brownian_piecewise_X_with_exog
 from models.pp_exog import PPExogenousSEM
 from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
@@ -111,21 +112,23 @@ def main():
     plt.show()
     
     # ヒートマップ表示（最終時刻）
-    t_idx = T - 1
-    heatmap_matrices = {
-        'True': S_series[t_idx],
-        'PP': S_hat_list[t_idx],
-        'PC': estimates_pc[t_idx],
-        'CO': estimates_co[t_idx],
-        'SGD': estimates_sgd[t_idx],
-    }
-    heatmap_filename = filename.replace(".png", f"_heatmap_t{t_idx}.png")
-    plot_heatmaps(
-        matrices=heatmap_matrices,
-        save_path=Path(result_dir) / heatmap_filename,
-        title=f"Estimated vs True at t={t_idx}",
-        show=True,
-    )
+    cfg = get_config()
+    if cfg.output.save_heatmap:
+        t_idx = T - 1
+        heatmap_matrices = {
+            'True': S_series[t_idx],
+            'PP': S_hat_list[t_idx],
+            'PC': estimates_pc[t_idx],
+            'CO': estimates_co[t_idx],
+            'SGD': estimates_sgd[t_idx],
+        }
+        heatmap_filename = filename.replace(".png", f"_heatmap_t{t_idx}.png")
+        plot_heatmaps(
+            matrices=heatmap_matrices,
+            save_path=Path(result_dir) / heatmap_filename,
+            title=f"Estimated vs True at t={t_idx}",
+            show=True,
+        )
 
     scripts_dir = Path(result_dir) / "scripts"
     scripts_dir.mkdir(parents=True, exist_ok=True)
