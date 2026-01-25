@@ -10,20 +10,10 @@
 
 from __future__ import annotations
 
-import copy
-import json
-import os
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from dataclasses import asdict, is_dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, get_args, get_origin
-
-
-def _env_flag(name: str) -> Optional[bool]:
-    value = os.getenv(name)
-    if value is None:
-        return None
-    return value.strip().lower() in ("1", "true", "yes", "on")
+from typing import Any, Dict, List, Optional
 
 
 # =============================================================================
@@ -32,14 +22,13 @@ def _env_flag(name: str) -> Optional[bool]:
 @dataclass
 class MethodFlags:
     """実行する手法を制御するフラグ"""
-    # ※ デフォルトは全てFalse（CONFIGで明示的にTrueにした手法のみ実行）
     # ※ 設定を変更するにはファイル下部の CONFIG インスタンスを編集してください
-    pp: bool = False    # Proposed (PP)
-    pp_sgd: bool = False  # PP-SGD (q=1, r=1固定; 1データ更新)
-    pc: bool = False    # Prediction Correction
-    co: bool = False    # Correction Only
-    sgd: bool = False   # SGD
-    pg: bool = False    # Proximal Gradient (バッチ法)
+    pp: bool    # Proposed (PP)
+    pp_sgd: bool  # PP-SGD (q=1, r=1固定; 1データ更新)
+    pc: bool    # Prediction Correction
+    co: bool    # Correction Only
+    sgd: bool   # SGD
+    pg: bool    # Proximal Gradient (バッチ法)
 
 
 # =============================================================================
@@ -48,14 +37,13 @@ class MethodFlags:
 @dataclass
 class CommonParams:
     """シナリオ共通のシミュレーションパラメータ"""
-    # ※ ここはデフォルト値の定義です
     # ※ 設定を変更するにはファイル下部の CONFIG インスタンスを編集してください
-    N: int = 20           # ノード数
-    T: int = 1000         # 時系列長
-    sparsity: float = 0.7 # スパース性 (エッジが存在しない割合)
-    max_weight: float = 0.5  # 隣接行列の最大重み
-    std_e: float = 0.05   # ノイズの標準偏差
-    seed: int = 3         # 乱数シードの基点
+    N: int           # ノード数
+    T: int         # 時系列長
+    sparsity: float # スパース性 (エッジが存在しない割合)
+    max_weight: float  # 隣接行列の最大重み
+    std_e: float   # ノイズの標準偏差
+    seed: int         # 乱数シードの基点
 
 
 # =============================================================================
@@ -64,7 +52,7 @@ class CommonParams:
 @dataclass
 class PiecewiseParams:
     """Piecewiseシナリオ固有のパラメータ"""
-    K: int = 4  # 変化点の数
+    K: int  # 変化点の数
 
 
 @dataclass
@@ -77,8 +65,8 @@ class LinearParams:
 @dataclass
 class BrownianParams:
     """Brownianシナリオ固有のパラメータ"""
-    K: int = 5          # 区間数 (K=Tなら毎ステップ更新)
-    std_S: float = 0.05 # Sの更新ノイズ標準偏差
+    K: int          # 区間数 (K=Tなら毎ステップ更新)
+    std_S: float # Sの更新ノイズ標準偏差
 
 
 
@@ -88,10 +76,10 @@ class BrownianParams:
 @dataclass
 class DataGenParams:
     """データ生成の追加パラメータ"""
-    s_type: str = "random"      # 隣接行列のタイプ
-    t_min: float = 0.5          # 外生変数係数の最小値
-    t_max: float = 1.0          # 外生変数係数の最大値
-    z_dist: str = "uniform01"   # 外生変数の分布
+    s_type: str      # 隣接行列のタイプ
+    t_min: float          # 外生変数係数の最小値
+    t_max: float          # 外生変数係数の最大値
+    z_dist: str   # 外生変数の分布
 
 
 # =============================================================================
@@ -100,10 +88,10 @@ class DataGenParams:
 @dataclass
 class TuningParams:
     """ハイパーパラメータチューニングの設定"""
-    tuning_trials: int = 300         # Optunaの試行回数
-    tuning_runs_per_trial: int = 1   # 各試行での実行回数（平均を取る）
-    truncation_horizon: int = 400    # チューニング時の打ち切りステップ数
-    tuning_seed: int = 4             # チューニング用シード
+    tuning_trials: int         # Optunaの試行回数
+    tuning_runs_per_trial: int   # 各試行での実行回数（平均を取る）
+    truncation_horizon: int    # チューニング時の打ち切りステップ数
+    tuning_seed: int             # チューニング用シード
 
 
 @dataclass
@@ -111,10 +99,10 @@ class SearchRange:
     """単一パラメータの探索範囲"""
     low: float
     high: float
-    log: bool = False
-    type: str = "float"
-    step: Optional[int] = None
-    choices: Optional[List[Any]] = None
+    log: bool
+    type: str
+    step: Optional[int]
+    choices: Optional[List[Any]]
 
 
 @dataclass
@@ -123,80 +111,64 @@ class PPSearchSpace:
     # r,q も探索対象に含める（提案法が負けているケースを拾いやすくするため）
     # - r: ウィンドウ長（大きいほど平滑化されやすいが追従性は落ちる）
     # - q: 並列ブロック数（大きいほど情報を増やすが計算量/安定性に影響）
-    r: SearchRange = field(
-        default_factory=lambda: SearchRange(
-            low=0,
-            high=0,
-            log=False,
-            type="categorical",
-            choices=[10, 20, 30, 40, 50, 75, 100, 150, 200],
-        )
-    )
-    q: SearchRange = field(
-        default_factory=lambda: SearchRange(
-            low=0,
-            high=0,
-            log=False,
-            type="categorical",
-            choices=[1, 2, 3, 5, 8, 10],
-        )
-    )
-    rho: SearchRange = field(default_factory=lambda: SearchRange(low=1e-6, high=1e-1, log=True))
-    mu_lambda: SearchRange = field(default_factory=lambda: SearchRange(low=1e-4, high=1.0, log=True))
-    lambda_S: SearchRange = field(default_factory=lambda: SearchRange(low=1e-6, high=1e-1, log=True))
+    r: SearchRange
+    q: SearchRange
+    rho: SearchRange
+    mu_lambda: SearchRange
+    lambda_S: SearchRange
 
 
 @dataclass
 class PCSearchSpace:
     """PC法の探索範囲"""
-    lambda_reg: SearchRange = field(default_factory=lambda: SearchRange(low=1e-5, high=1e-2, log=True))
-    alpha: SearchRange = field(default_factory=lambda: SearchRange(low=1e-6, high=1e-1, log=True))
-    beta_pc: SearchRange = field(default_factory=lambda: SearchRange(low=1e-6, high=1e-1, log=True))
-    gamma: SearchRange = field(default_factory=lambda: SearchRange(low=0.85, high=0.999, log=False))
-    P: SearchRange = field(default_factory=lambda: SearchRange(low=0, high=2, log=False, type="int", step=1))
-    C: SearchRange = field(default_factory=lambda: SearchRange(low=0, high=0, log=False, type="categorical", choices=[1, 2, 5]))
+    lambda_reg: SearchRange
+    alpha: SearchRange
+    beta_pc: SearchRange
+    gamma: SearchRange
+    P: SearchRange
+    C: SearchRange
 
 
 @dataclass
 class COSearchSpace:
     """CO法の探索範囲"""
-    alpha: SearchRange = field(default_factory=lambda: SearchRange(low=1e-6, high=1e-1, log=True))
-    beta_co: SearchRange = field(default_factory=lambda: SearchRange(low=1e-6, high=1e-1, log=True))
-    gamma: SearchRange = field(default_factory=lambda: SearchRange(low=0.85, high=0.999, log=False))
-    C: SearchRange = field(default_factory=lambda: SearchRange(low=0, high=0, log=False, type="categorical", choices=[1, 2, 5]))
+    alpha: SearchRange
+    beta_co: SearchRange
+    gamma: SearchRange
+    C: SearchRange
 
 
 @dataclass
 class SGDSearchSpace:
     """SGD法の探索範囲"""
-    alpha: SearchRange = field(default_factory=lambda: SearchRange(low=1e-6, high=1e-1, log=True))
-    beta_sgd: SearchRange = field(default_factory=lambda: SearchRange(low=1e-6, high=1e-1, log=True))
+    alpha: SearchRange
+    beta_sgd: SearchRange
 
 
 @dataclass
 class PGSearchSpace:
     """PG法の探索範囲"""
-    lambda_reg: SearchRange = field(default_factory=lambda: SearchRange(low=1e-5, high=1e-2, log=True))
-    step_scale: SearchRange = field(default_factory=lambda: SearchRange(low=1e-6, high=1e-1, log=True))
-    use_fista: SearchRange = field(default_factory=lambda: SearchRange(low=0, high=0, log=False, type="categorical", choices=[True, False]))
+    lambda_reg: SearchRange
+    step_scale: SearchRange
+    use_fista: SearchRange
 
 
 @dataclass
 class OfflineSearchSpace:
     """オフライン解のハイパラ探索範囲"""
-    offline_lambda_l1: SearchRange = field(default_factory=lambda: SearchRange(low=1e-4, high=1.0, log=True))
+    offline_lambda_l1: SearchRange
 
 
 @dataclass
 class SearchSpaces:
     """全手法の探索範囲"""
-    pp: PPSearchSpace = field(default_factory=PPSearchSpace)
-    pp_sgd: PPSearchSpace = field(default_factory=PPSearchSpace)
-    pc: PCSearchSpace = field(default_factory=PCSearchSpace)
-    co: COSearchSpace = field(default_factory=COSearchSpace)
-    sgd: SGDSearchSpace = field(default_factory=SGDSearchSpace)
-    pg: PGSearchSpace = field(default_factory=PGSearchSpace)
-    offline: OfflineSearchSpace = field(default_factory=OfflineSearchSpace)
+    pp: PPSearchSpace
+    pp_sgd: PPSearchSpace
+    pc: PCSearchSpace
+    co: COSearchSpace
+    sgd: SGDSearchSpace
+    pg: PGSearchSpace
+    offline: OfflineSearchSpace
 
 
 # =============================================================================
@@ -205,58 +177,58 @@ class SearchSpaces:
 @dataclass
 class PPHyperparams:
     """PP法のハイパーパラメータ"""
-    r: int = 50
-    q: int = 5
-    rho: float = 1e-3
-    mu_lambda: float = 0.05
-    lambda_S: float = 0.01  # L1正則化係数（スパース性促進）
+    r: int
+    q: int
+    rho: float
+    mu_lambda: float
+    lambda_S: float  # L1正則化係数（スパース性促進）
 
 
 @dataclass
 class PCHyperparams:
     """PC法のハイパーパラメータ"""
-    lambda_reg: float = 1e-3
-    alpha: float = 1e-2
-    beta: float = 1e-2
-    gamma: float = 0.9
-    P: int = 1
-    C: int = 1
+    lambda_reg: float
+    alpha: float
+    beta: float
+    gamma: float
+    P: int
+    C: int
 
 
 @dataclass
 class COHyperparams:
     """CO法のハイパーパラメータ"""
-    beta_co: float = 0.02
+    beta_co: float
 
 
 @dataclass
 class SGDHyperparams:
     """SGD法のハイパーパラメータ"""
-    beta_sgd: float = 0.0269
+    beta_sgd: float
 
 
 @dataclass
 class PGHyperparams:
     """PG法のハイパーパラメータ"""
-    lambda_reg: float = 1e-3
-    step_scale: float = 1.0
-    step_size: Optional[float] = None
-    use_fista: bool = True
-    use_backtracking: bool = False
-    max_iter: int = 500
-    tol: float = 1e-4
+    lambda_reg: float
+    step_scale: float
+    step_size: Optional[float]
+    use_fista: bool
+    use_backtracking: bool
+    max_iter: int
+    tol: float
 
 
 @dataclass
 class DefaultHyperparams:
     """全手法のデフォルトハイパーパラメータ"""
-    pp: PPHyperparams = field(default_factory=PPHyperparams)
+    pp: PPHyperparams
     # PP-SGD（q=1, r=1固定）: 1データのみで更新する比較用
-    pp_sgd: PPHyperparams = field(default_factory=lambda: PPHyperparams(r=1, q=1))
-    pc: PCHyperparams = field(default_factory=PCHyperparams)
-    co: COHyperparams = field(default_factory=COHyperparams)
-    sgd: SGDHyperparams = field(default_factory=SGDHyperparams)
-    pg: PGHyperparams = field(default_factory=PGHyperparams)
+    pp_sgd: PPHyperparams
+    pc: PCHyperparams
+    co: COHyperparams
+    sgd: SGDHyperparams
+    pg: PGHyperparams
 
 
 # =============================================================================
@@ -268,7 +240,7 @@ class MetricParams:
     # 誤差の正規化方法を選択
     # "true_value": 真の値のノルムで割る（従来の方法）
     # "offline_solution": オフライン解のノルムで割る（offline_lambda_l1はOptunaで自動探索）
-    error_normalization: str = "true_value"
+    error_normalization: str
     # 時系列平均誤差を取る際に、先頭 burn_in ステップを無視する
     # - 0: 無視しない
     # - -1: 自動（PPの r,q から r+q-2 を使用）
@@ -280,7 +252,7 @@ class MetricParams:
     #
     # 注意:
     # - burn_in は “評価/可視化の集計” を変えるだけで、データ長Tやプロットの横軸範囲は変えない。
-    burn_in: int = 0
+    burn_in: int
 
     # 誤差を N^2 で割るか（行列要素あたりの平均スケールにする）
     # - False: 既存の誤差（デフォルト）
@@ -290,7 +262,7 @@ class MetricParams:
     # - Nが変わったときに、誤差のスケールが N^2 に比例して見えるのを抑える。
     # 注意:
     # - 相対比較（どの手法が勝つか）は変えないが、縦軸スケールは変わる。
-    divide_by_n2: bool = False
+    divide_by_n2: bool
 
 
 # =============================================================================
@@ -304,20 +276,20 @@ class ComparisonParams:
     # - "noexog": x = Sx + noise（Z/Tを一切使わない）
     #   ※ "noexog" は提案法（PP）が外生を使う条件ではベースラインが不利になるので、
     #      “提案法を良く見せる/条件を変える” 意図がある場合に使う。
-    pc_model: str = "exog"
+    pc_model: str
 
     # PC/CO/SGD に真の T を与えるか（Trueだとベースラインが有利になりがち）
     # - True: PC側は外生係数を“既知”として扱える（ベースライン有利）
     # - False: T_init を単位行列スケールで与える（Tを当てにしない/未知に近い条件）
-    pc_use_true_T_init: bool = True
+    pc_use_true_T_init: bool
     # pc_use_true_T_init=False の場合に使う T_init（単位行列のスケール）
-    pc_T_init_identity_scale: float = 1.0
+    pc_T_init_identity_scale: float
 
     # PP の T 初期値 b0 の作り方
     # - "ones": b0 = 1
     # - "true_T_diag": b0 = diag(T_true)
     #   ※ PPは [S|T] を同時に推定するので、b0 は “Tの初期値” に相当する。
-    pp_init_b0: str = "ones"
+    pp_init_b0: str
 
     # PP の「序盤のデータ不足」を緩和するために、ウィンドウの右側に先読みデータを含める
     # - 0: 先読みしない（オンライン）
@@ -330,7 +302,7 @@ class ComparisonParams:
     # 注意（重要）:
     # - lookahead>0 は未来データを使うため、厳密なオンライン条件ではない（チート/オフライン寄り）。
     # - ただしプロットの横軸 t=0..T-1（データ長T）は変えない。
-    pp_lookahead: int = 0
+    pp_lookahead: int
 
 
 # =============================================================================
@@ -339,7 +311,37 @@ class ComparisonParams:
 @dataclass
 class RunParams:
     """シミュレーション実行設定"""
-    num_trials: int = 100        # モンテカルロ試行回数
+    num_trials: int        # モンテカルロ試行回数
+
+
+# =============================================================================
+# スクリプト固有の設定
+# =============================================================================
+@dataclass
+class DiagnoseRerunParams:
+    """diagnose_rerun_sgd_piecewise の設定"""
+    meta_json: Path
+    hyperparam_json: Optional[Path]
+    n_jobs: int
+    topk: int
+    exclude_top_by_max: int
+    exclude_seeds: List[int]
+    write_updated_meta: bool
+    inplace: bool
+    overwrite_figure: bool
+    figure_out: Optional[Path]
+    no_show: bool
+
+
+@dataclass
+class ScriptParams:
+    """スクリプト固有の設定"""
+    tune_and_run_scenario: str
+    run_piecewise_once_show_offline_line: bool
+    run_piecewise_once_heatmap_time: int
+    run_piecewise_once_output_subdir: str
+    run_linear_once_output_subdir: str
+    diagnose_rerun_sgd_piecewise: DiagnoseRerunParams
 
 
 # =============================================================================
@@ -348,11 +350,11 @@ class RunParams:
 @dataclass
 class OutputParams:
     """出力設定"""
-    result_root: Path = field(default_factory=lambda: Path("./result"))
-    subdir_piecewise: str = "exog_sparse_piecewise"
-    subdir_linear: str = "exog_sparse_linear"
-    subdir_tuning: str = "exog_sparse_tuning"
-    save_heatmap: bool = True  # ヒートマップ画像を保存するか
+    result_root: Path
+    subdir_piecewise: str
+    subdir_linear: str
+    subdir_tuning: str
+    save_heatmap: bool  # ヒートマップ画像を保存するか
 
 
 # =============================================================================
@@ -366,44 +368,47 @@ class SimulationConfig:
     すべての設定はこのクラスのインスタンスを通じてアクセスします。
     """
     # 実行する手法
-    methods: MethodFlags = field(default_factory=MethodFlags)
+    methods: MethodFlags
     
     # シナリオ共通パラメータ
-    common: CommonParams = field(default_factory=CommonParams)
+    common: CommonParams
     
     # シナリオ固有パラメータ
-    piecewise: PiecewiseParams = field(default_factory=PiecewiseParams)
-    linear: LinearParams = field(default_factory=LinearParams)
-    brownian: BrownianParams = field(default_factory=BrownianParams)
+    piecewise: PiecewiseParams
+    linear: LinearParams
+    brownian: BrownianParams
     
     # データ生成パラメータ
-    data_gen: DataGenParams = field(default_factory=DataGenParams)
+    data_gen: DataGenParams
     
     # チューニング設定
-    tuning: TuningParams = field(default_factory=TuningParams)
+    tuning: TuningParams
     
     # 探索範囲
-    search_spaces: SearchSpaces = field(default_factory=SearchSpaces)
+    search_spaces: SearchSpaces
     
     # デフォルトハイパーパラメータ
-    hyperparams: DefaultHyperparams = field(default_factory=DefaultHyperparams)
+    hyperparams: DefaultHyperparams
     
     # 実行設定
-    run: RunParams = field(default_factory=RunParams)
+    run: RunParams
+
+    # スクリプト固有設定
+    scripts: ScriptParams
     
     # 評価指標設定
-    metric: MetricParams = field(default_factory=MetricParams)
+    metric: MetricParams
 
     # 比較条件設定
-    comparison: ComparisonParams = field(default_factory=ComparisonParams)
+    comparison: ComparisonParams
     
     # 出力設定
-    output: OutputParams = field(default_factory=OutputParams)
+    output: OutputParams
     
     # 実行モード
-    skip_tuning: bool = False          # チューニングをスキップ
-    skip_simulation: bool = False      # シミュレーションをスキップ
-    hyperparam_json: Optional[Path] = None  # 既存のハイパラJSONを使用する場合のパス
+    skip_tuning: bool          # チューニングをスキップ
+    skip_simulation: bool      # シミュレーションをスキップ
+    hyperparam_json: Optional[Path]  # 既存のハイパラJSONを使用する場合のパス
 
 
 # =============================================================================
@@ -412,22 +417,23 @@ class SimulationConfig:
 # True: テスト用の軽量設定（プログラム動作確認用、すぐに終わる）
 # False: 本番用設定（実際のシミュレーション用）
 # USE_TEST_CONFIG = True
-USE_TEST_CONFIG = True
+USE_TEST_CONFIG = False
 
 # =============================================================================
 # ★★★ 設定を変更するにはここを編集してください ★★★
 # =============================================================================
 # 上部のクラス定義ではなく、以下の CONFIG インスタンスの値を変更してください。
-# クラス定義のデフォルト値を変更しても、ここで明示的に設定された値が優先されます。
+# クラス定義にはデフォルト値を置かず、必ずここで全項目を明示的に指定してください。
 #
 CONFIG_MAIN = SimulationConfig(
     # 実行する手法（Trueにした手法のみ実行、コメントアウトで無効化可能）
     methods=MethodFlags(
         pp=True,
+        pp_sgd=False,
         pc=True,
         co=True,
         sgd=True,
-        # pg=True,
+        pg=False,
     ),
     
     # シナリオ共通パラメータ
@@ -442,7 +448,7 @@ CONFIG_MAIN = SimulationConfig(
     
     # Piecewiseシナリオのパラメータ
     piecewise=PiecewiseParams(
-        K=1,               # 再現対象に合わせる
+        K=4,               # 再現対象に合わせる
     ),
 
     # Linearシナリオのパラメータ（現状パラメータなしだが明示）
@@ -486,6 +492,7 @@ CONFIG_MAIN = SimulationConfig(
                 high=0,
                 log=False,
                 type="categorical",
+                step=None,
                 choices=[200, 400, 600, 800, 1000],
             ),
             q=SearchRange(
@@ -493,39 +500,61 @@ CONFIG_MAIN = SimulationConfig(
                 high=0,
                 log=False,
                 type="categorical",
+                step=None,
                 choices=[8, 10, 20, 40],
             ),
             # rho / lambda_S は log 探索で上下限を広げる（極端な条件も拾う）
-            rho=SearchRange(low=1e-12, high=1e0, log=True),           # レベル集合の閾値ρ（大きいほど制約が緩い）
-            mu_lambda=SearchRange(low=1e-3, high=1e3, log=True),     # 緩和係数スカラー（大きいほど更新が速い）
-            lambda_S=SearchRange(low=1e-12, high=1e0, log=True),      # SブロックへのL1強度（スパース誘導）
+            rho=SearchRange(low=1e-12, high=1e0, log=True, type="float", step=None, choices=None),           # レベル集合の閾値ρ（大きいほど制約が緩い）
+            mu_lambda=SearchRange(low=1e-3, high=1e3, log=True, type="float", step=None, choices=None),     # 緩和係数スカラー（大きいほど更新が速い）
+            lambda_S=SearchRange(low=1e-12, high=1e0, log=True, type="float", step=None, choices=None),      # SブロックへのL1強度（スパース誘導）
+        ),
+        pp_sgd=PPSearchSpace(
+            r=SearchRange(
+                low=0,
+                high=0,
+                log=False,
+                type="categorical",
+                step=None,
+                choices=[1],
+            ),
+            q=SearchRange(
+                low=0,
+                high=0,
+                log=False,
+                type="categorical",
+                step=None,
+                choices=[1],
+            ),
+            rho=SearchRange(low=1e-12, high=1e0, log=True, type="float", step=None, choices=None),
+            mu_lambda=SearchRange(low=1e-3, high=1e3, log=True, type="float", step=None, choices=None),
+            lambda_S=SearchRange(low=1e-12, high=1e0, log=True, type="float", step=None, choices=None),
         ),
         pc=PCSearchSpace(
-            lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True),   # L1正則化係数（PCの疎性）
-            alpha=SearchRange(low=1e-6, high=1e+1, log=True),         # PCのステップ（S側）
-            beta_pc=SearchRange(low=1e-6, high=1e+1, log=True),       # PCのステップ（補正側）
-            gamma=SearchRange(low=0.85, high=0.999, log=False),       # 忘却係数（共分散のEWMA）
-            P=SearchRange(low=1, high=1, log=False, type="int", step=1), # Prediction回数
-            C=SearchRange(low=1, high=1, log=False, type="int", step=1), # Correction回数
+            lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True, type="float", step=None, choices=None),   # L1正則化係数（PCの疎性）
+            alpha=SearchRange(low=1e-6, high=1e+1, log=True, type="float", step=None, choices=None),         # PCのステップ（S側）
+            beta_pc=SearchRange(low=1e-6, high=1e+1, log=True, type="float", step=None, choices=None),       # PCのステップ（補正側）
+            gamma=SearchRange(low=0.85, high=0.999, log=False, type="float", step=None, choices=None),       # 忘却係数（共分散のEWMA）
+            P=SearchRange(low=1, high=1, log=False, type="int", step=1, choices=None), # Prediction回数
+            C=SearchRange(low=1, high=1, log=False, type="int", step=1, choices=None), # Correction回数
         ),
         co=COSearchSpace(
-            alpha=SearchRange(low=1e-6, high=1e+1, log=True),
-            beta_co=SearchRange(low=1e-6, high=1e+1, log=True),
-            gamma=SearchRange(low=0.85, high=0.999, log=False),
-            C=SearchRange(low=1, high=1, log=False, type="int", step=1),
+            alpha=SearchRange(low=1e-6, high=1e+1, log=True, type="float", step=None, choices=None),
+            beta_co=SearchRange(low=1e-6, high=1e+1, log=True, type="float", step=None, choices=None),
+            gamma=SearchRange(low=0.85, high=0.999, log=False, type="float", step=None, choices=None),
+            C=SearchRange(low=1, high=1, log=False, type="int", step=1, choices=None),
         ),
         sgd=SGDSearchSpace(
-            alpha=SearchRange(low=1e-6, high=1e+1, log=True),
-            beta_sgd=SearchRange(low=1e-6, high=1e+1, log=True),
+            alpha=SearchRange(low=1e-6, high=1e+1, log=True, type="float", step=None, choices=None),
+            beta_sgd=SearchRange(low=1e-6, high=1e+1, log=True, type="float", step=None, choices=None),
         ),
         pg=PGSearchSpace(
-            lambda_reg=SearchRange(low=1e-5, high=1e+1, log=True),
-            step_scale=SearchRange(low=1e-6, high=1e+1, log=True),
-            use_fista=SearchRange(low=0, high=0, log=False, type="categorical", choices=[False]),
+            lambda_reg=SearchRange(low=1e-5, high=1e+1, log=True, type="float", step=None, choices=None),
+            step_scale=SearchRange(low=1e-6, high=1e+1, log=True, type="float", step=None, choices=None),
+            use_fista=SearchRange(low=0, high=0, log=False, type="categorical", step=None, choices=[False]),
             # use_fista=SearchRange(low=0, high=0, log=False, type="categorical", choices=[True, False]),
         ),
         offline=OfflineSearchSpace(
-            offline_lambda_l1=SearchRange(low=1e-4, high=1e+1, log=True),
+            offline_lambda_l1=SearchRange(low=1e-4, high=1e+1, log=True, type="float", step=None, choices=None),
         ),
     ),
 
@@ -537,6 +566,13 @@ CONFIG_MAIN = SimulationConfig(
             rho=1e-3,        # PPのρ
             mu_lambda=1.0,   # PPの緩和スカラー
             lambda_S=1e-2,   # PPのL1強度（Sのみ）
+        ),
+        pp_sgd=PPHyperparams(
+            r=1,
+            q=1,
+            rho=1e-3,
+            mu_lambda=1.0,
+            lambda_S=1e-2,
         ),
         pc=PCHyperparams(
             lambda_reg=1e-3, # PCのL1強度
@@ -566,6 +602,28 @@ CONFIG_MAIN = SimulationConfig(
     # 実行設定
     run=RunParams(
         num_trials=100,
+    ),
+
+    # スクリプト固有設定
+    scripts=ScriptParams(
+        tune_and_run_scenario="piecewise",
+        run_piecewise_once_show_offline_line=False,
+        run_piecewise_once_heatmap_time=-1,
+        run_piecewise_once_output_subdir="exog_sparse_piecewise_once",
+        run_linear_once_output_subdir="exog_sparse_linear_once",
+        diagnose_rerun_sgd_piecewise=DiagnoseRerunParams(
+            meta_json=Path("CHANGE_ME_meta.json"),
+            hyperparam_json=None,
+            n_jobs=-1,
+            topk=10,
+            exclude_top_by_max=0,
+            exclude_seeds=[],
+            write_updated_meta=False,
+            inplace=False,
+            overwrite_figure=False,
+            figure_out=None,
+            no_show=False,
+        ),
     ),
     
     # 評価指標設定
@@ -602,8 +660,8 @@ CONFIG_MAIN = SimulationConfig(
     # 実行モード
     skip_tuning=True,
     skip_simulation=False,
-    # ppだけ 251221、他手法は 251217 のハイパラにした “マージ済みJSON”
-    hyperparam_json=Path("result/251221/exog_sparse_piecewise/images/scripts/piecewise_hyperparams_pp251221_others251217.json"),
+    # piecewise_K=4_N=20_T=1000 のハイパラ（251201）
+    hyperparam_json=Path("result/251201/exog_sparse_tuning/piecewise_best_hyperparams_20251201_185134.json"),
 )
 
 # =============================================================================
@@ -613,10 +671,11 @@ CONFIG_TEST = SimulationConfig(
     # 実行する手法（テストでは1つだけ有効に）
     methods=MethodFlags(
         pp=True,
+        pp_sgd=False,
         # pc=True,
         # co=True,
         # sgd=True,
-        # pg=True,
+        pg=False,
     ),
     
     # テスト用の小さなパラメータ
@@ -662,42 +721,142 @@ CONFIG_TEST = SimulationConfig(
     # 探索範囲（本番と同じ）
     search_spaces=SearchSpaces(
         pp=PPSearchSpace(
-            rho=SearchRange(low=1e-6, high=1e-1, log=True),
+            r=SearchRange(
+                low=0,
+                high=0,
+                log=False,
+                type="categorical",
+                step=None,
+                choices=[10, 20, 30, 40, 50, 75, 100, 150, 200],
+            ),
+            q=SearchRange(
+                low=0,
+                high=0,
+                log=False,
+                type="categorical",
+                step=None,
+                choices=[1, 2, 3, 5, 8, 10],
+            ),
+            rho=SearchRange(low=1e-6, high=1e-1, log=True, type="float", step=None, choices=None),
             # 理論上 μ_t ∈ (0, 2 M_t) を狙うため、μ_lambda は 1 付近〜2 まで探索する
-            mu_lambda=SearchRange(low=1e-2, high=2.0, log=True),
-            lambda_S=SearchRange(low=1e-6, high=1e-1, log=True),
+            mu_lambda=SearchRange(low=1e-2, high=2.0, log=True, type="float", step=None, choices=None),
+            lambda_S=SearchRange(low=1e-6, high=1e-1, log=True, type="float", step=None, choices=None),
+        ),
+        pp_sgd=PPSearchSpace(
+            r=SearchRange(
+                low=0,
+                high=0,
+                log=False,
+                type="categorical",
+                step=None,
+                choices=[1],
+            ),
+            q=SearchRange(
+                low=0,
+                high=0,
+                log=False,
+                type="categorical",
+                step=None,
+                choices=[1],
+            ),
+            rho=SearchRange(low=1e-6, high=1e-1, log=True, type="float", step=None, choices=None),
+            mu_lambda=SearchRange(low=1e-2, high=2.0, log=True, type="float", step=None, choices=None),
+            lambda_S=SearchRange(low=1e-6, high=1e-1, log=True, type="float", step=None, choices=None),
         ),
         pc=PCSearchSpace(
-            lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True),
-            alpha=SearchRange(low=1e-6, high=1e-1, log=True),
-            beta_pc=SearchRange(low=1e-6, high=1e-1, log=True),
-            gamma=SearchRange(low=0.85, high=0.999, log=False),
-            P=SearchRange(low=0, high=2, log=False, type="int", step=1),
-            C=SearchRange(low=0, high=0, log=False, type="categorical", choices=[1, 2, 5]),
+            lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True, type="float", step=None, choices=None),
+            alpha=SearchRange(low=1e-6, high=1e-1, log=True, type="float", step=None, choices=None),
+            beta_pc=SearchRange(low=1e-6, high=1e-1, log=True, type="float", step=None, choices=None),
+            gamma=SearchRange(low=0.85, high=0.999, log=False, type="float", step=None, choices=None),
+            P=SearchRange(low=0, high=2, log=False, type="int", step=1, choices=None),
+            C=SearchRange(low=0, high=0, log=False, type="categorical", step=None, choices=[1, 2, 5]),
         ),
         co=COSearchSpace(
-            alpha=SearchRange(low=1e-6, high=1e-1, log=True),
-            beta_co=SearchRange(low=1e-6, high=1e-1, log=True),
-            gamma=SearchRange(low=0.85, high=0.999, log=False),
-            C=SearchRange(low=0, high=0, log=False, type="categorical", choices=[1, 2, 5]),
+            alpha=SearchRange(low=1e-6, high=1e-1, log=True, type="float", step=None, choices=None),
+            beta_co=SearchRange(low=1e-6, high=1e-1, log=True, type="float", step=None, choices=None),
+            gamma=SearchRange(low=0.85, high=0.999, log=False, type="float", step=None, choices=None),
+            C=SearchRange(low=0, high=0, log=False, type="categorical", step=None, choices=[1, 2, 5]),
         ),
         sgd=SGDSearchSpace(
-            alpha=SearchRange(low=1e-6, high=1e-1, log=True),
-            beta_sgd=SearchRange(low=1e-6, high=1e-1, log=True),
+            alpha=SearchRange(low=1e-6, high=1e-1, log=True, type="float", step=None, choices=None),
+            beta_sgd=SearchRange(low=1e-6, high=1e-1, log=True, type="float", step=None, choices=None),
         ),
         pg=PGSearchSpace(
-            lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True),
-            step_scale=SearchRange(low=1e-6, high=1e-1, log=True),
-            use_fista=SearchRange(low=0, high=0, log=False, type="categorical", choices=[True, False]),
+            lambda_reg=SearchRange(low=1e-5, high=1e-2, log=True, type="float", step=None, choices=None),
+            step_scale=SearchRange(low=1e-6, high=1e-1, log=True, type="float", step=None, choices=None),
+            use_fista=SearchRange(low=0, high=0, log=False, type="categorical", step=None, choices=[True, False]),
         ),
         offline=OfflineSearchSpace(
-            offline_lambda_l1=SearchRange(low=1e-4, high=1.0, log=True),
+            offline_lambda_l1=SearchRange(low=1e-4, high=1.0, log=True, type="float", step=None, choices=None),
+        ),
+    ),
+
+    # デフォルトハイパーパラメータ（ハイパラJSON未指定時のフォールバック）
+    hyperparams=DefaultHyperparams(
+        pp=PPHyperparams(
+            r=50,
+            q=5,
+            rho=1e-3,
+            mu_lambda=0.05,
+            lambda_S=1e-2,
+        ),
+        pp_sgd=PPHyperparams(
+            r=1,
+            q=1,
+            rho=1e-3,
+            mu_lambda=0.05,
+            lambda_S=1e-2,
+        ),
+        pc=PCHyperparams(
+            lambda_reg=1e-3,
+            alpha=1e-2,
+            beta=1e-2,
+            gamma=0.9,
+            P=1,
+            C=1,
+        ),
+        co=COHyperparams(
+            beta_co=0.02,
+        ),
+        sgd=SGDHyperparams(
+            beta_sgd=0.0269,
+        ),
+        pg=PGHyperparams(
+            lambda_reg=1e-3,
+            step_scale=1.0,
+            step_size=None,
+            use_fista=True,
+            use_backtracking=False,
+            max_iter=500,
+            tol=1e-4,
         ),
     ),
     
     # テスト用の少ない試行回数
     run=RunParams(
         num_trials=2,  # モンテカルロ試行も最小限
+    ),
+
+    # スクリプト固有設定
+    scripts=ScriptParams(
+        tune_and_run_scenario="piecewise",
+        run_piecewise_once_show_offline_line=False,
+        run_piecewise_once_heatmap_time=-1,
+        run_piecewise_once_output_subdir="exog_sparse_piecewise_once",
+        run_linear_once_output_subdir="exog_sparse_linear_once",
+        diagnose_rerun_sgd_piecewise=DiagnoseRerunParams(
+            meta_json=Path("CHANGE_ME_meta.json"),
+            hyperparam_json=None,
+            n_jobs=-1,
+            topk=10,
+            exclude_top_by_max=0,
+            exclude_seeds=[],
+            write_updated_meta=False,
+            inplace=False,
+            overwrite_figure=False,
+            figure_out=None,
+            no_show=False,
+        ),
     ),
     
     # 評価指標設定
@@ -720,6 +879,10 @@ CONFIG_TEST = SimulationConfig(
     # 出力設定
     output=OutputParams(
         result_root=Path("./result"),
+        subdir_piecewise="exog_sparse_piecewise",
+        subdir_linear="exog_sparse_linear",
+        subdir_tuning="exog_sparse_tuning",
+        save_heatmap=True,
     ),
     
     # 実行モード
@@ -728,113 +891,8 @@ CONFIG_TEST = SimulationConfig(
     hyperparam_json=None,
 )
 
-# =============================================================================
-# 設定の切り替え
-# =============================================================================
-def _load_config_overrides() -> Dict[str, Any]:
-    """環境変数の上書き設定を読み込む（JSONファイル or JSON文字列）。"""
-    override_path = os.getenv("TVG_CONFIG_OVERRIDE")
-    override_json = os.getenv("TVG_CONFIG_OVERRIDE_JSON")
-    if not override_path and not override_json:
-        return {}
-    if override_path:
-        path = Path(override_path).expanduser()
-        if not path.exists():
-            raise FileNotFoundError(f"TVG_CONFIG_OVERRIDE not found: {path}")
-        data = json.loads(path.read_text())
-    else:
-        data = json.loads(override_json)
-    if not isinstance(data, dict):
-        raise ValueError("config override must be a JSON object (dict).")
-    return data
-
-
-def _pop_use_test_override(overrides: Dict[str, Any]) -> Optional[bool]:
-    for key in ("__base__", "base", "use_test_config"):
-        if key not in overrides:
-            continue
-        value = overrides.pop(key)
-        if isinstance(value, bool):
-            return value
-        if isinstance(value, (int, float)):
-            return bool(value)
-        if isinstance(value, str):
-            v = value.strip().lower()
-            if v in ("test", "testing", "true", "1", "yes", "on"):
-                return True
-            if v in ("main", "prod", "false", "0", "no", "off"):
-                return False
-        raise ValueError(f"Invalid base config selector: {value!r}")
-    return None
-
-
-def _expects_path(target: Any, attr: str) -> bool:
-    if not is_dataclass(target):
-        return False
-    field_info = target.__dataclass_fields__.get(attr)
-    if field_info is None:
-        return False
-    typ = field_info.type
-    if typ is Path:
-        return True
-    return Path in get_args(typ)
-
-
-def _coerce_value(target: Any, attr: str, value: Any) -> Any:
-    if value is None:
-        return None
-    if _expects_path(target, attr) and isinstance(value, str):
-        return Path(value)
-    return value
-
-
-def _set_attr_path(obj: Any, path: str, value: Any) -> None:
-    parts = path.split(".")
-    current = obj
-    for part in parts[:-1]:
-        if not hasattr(current, part):
-            raise KeyError(f"Unknown config path: {path}")
-        current = getattr(current, part)
-    last = parts[-1]
-    if not hasattr(current, last):
-        raise KeyError(f"Unknown config path: {path}")
-    setattr(current, last, _coerce_value(current, last, value))
-
-
-def _apply_overrides_to_obj(obj: Any, overrides: Dict[str, Any]) -> None:
-    if not is_dataclass(obj):
-        raise TypeError("override target must be a dataclass instance.")
-    for key, value in overrides.items():
-        if "." in key:
-            _set_attr_path(obj, key, value)
-            continue
-        if not hasattr(obj, key):
-            raise KeyError(f"Unknown config key: {key}")
-        current = getattr(obj, key)
-        if is_dataclass(current) and isinstance(value, dict):
-            _apply_overrides_to_obj(current, value)
-        else:
-            setattr(obj, key, _coerce_value(obj, key, value))
-
-
-def _apply_overrides(cfg: SimulationConfig, overrides: Dict[str, Any]) -> SimulationConfig:
-    if not overrides:
-        return cfg
-    cfg_copy = copy.deepcopy(cfg)
-    _apply_overrides_to_obj(cfg_copy, overrides)
-    return cfg_copy
-
-
-_OVERRIDES = _load_config_overrides()
-_USE_TEST_ENV = _env_flag("TVG_USE_TEST_CONFIG")
-_USE_TEST_OVERRIDE = _pop_use_test_override(_OVERRIDES)
-if _USE_TEST_ENV is not None:
-    USE_TEST_CONFIG = _USE_TEST_ENV
-elif _USE_TEST_OVERRIDE is not None:
-    USE_TEST_CONFIG = _USE_TEST_OVERRIDE
-
-# USE_TEST_CONFIG の値に基づいて CONFIG を選択し、必要なら上書き
-CONFIG = _apply_overrides(CONFIG_TEST if USE_TEST_CONFIG else CONFIG_MAIN, _OVERRIDES)
+# USE_TEST_CONFIG の値に基づいて CONFIG を選択
+CONFIG = CONFIG_TEST if USE_TEST_CONFIG else CONFIG_MAIN
 
 
 # =============================================================================

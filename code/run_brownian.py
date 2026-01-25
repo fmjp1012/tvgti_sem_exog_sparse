@@ -6,22 +6,23 @@ Brownian シナリオのシミュレーション実行スクリプト
 
 使用方法:
     python -m code.run_brownian
-    python -m code.run_brownian --hyperparam_json path/to/hyperparams.json
+    python -m code.run_brownian
 
 Note:
     Brownian シナリオには追加パラメータ std_S と K が必要です。
-    現在は config.py の piecewise.K と固定の std_S=0.05 を使用しています。
-    必要に応じて BrownianParams を config.py に追加してください。
+    config.py の BrownianParams を編集してください。
 """
 
 from __future__ import annotations
 
+import sys
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
 from code.data_gen import generate_brownian_piecewise_X_with_exog
-from code.experiment_runner import BaseExperimentRunner, parse_hyperparam_arg
+from code.config import get_config
+from code.experiment_runner import BaseExperimentRunner
 
 
 class BrownianRunner(BaseExperimentRunner):
@@ -71,8 +72,10 @@ class BrownianRunner(BaseExperimentRunner):
 
 def main() -> None:
     """メイン処理"""
-    hyperparam_path = parse_hyperparam_arg()
-    runner = BrownianRunner(hyperparam_path=hyperparam_path)
+    if len(sys.argv) > 1:
+        raise SystemExit("CLI 引数は使用できません。code/config.py を編集してください。")
+    cfg = get_config()
+    runner = BrownianRunner(hyperparam_path=cfg.hyperparam_json)
     runner.run()
 
 

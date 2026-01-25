@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import argparse
 import json
 import time
 from pathlib import Path
-from typing import Optional
+import sys
 
+from code.config import get_config, get_enabled_methods
 from code.hyperparam_tuning import (
     save_best_hyperparams,
     tune_piecewise_all_methods,
@@ -14,90 +14,62 @@ from code.hyperparam_tuning import (
 
 def main() -> None:
     run_wall_start = time.perf_counter()
-    parser = argparse.ArgumentParser(description="ピースワイズシナリオのハイパラ調整ユーティリティ")
-    parser.add_argument("--N", type=int, default=20, help="ノード数")
-    parser.add_argument("--T", type=int, default=1000, help="系列長")
-    parser.add_argument("--sparsity", type=float, default=0.7, help="隣接行列のスパース率")
-    parser.add_argument("--max_weight", type=float, default=0.5, help="隣接行列の最大重み")
-    parser.add_argument("--std_e", type=float, default=0.05, help="ノイズ分散の標準偏差")
-    parser.add_argument("--K", type=int, default=4, help="区分数")
-    parser.add_argument("--tuning_trials", type=int, default=30, help="Optunaの試行回数")
-    parser.add_argument("--tuning_runs_per_trial", type=int, default=5, help="各Optuna試行での平均化回数")
-    parser.add_argument(
-        "--methods",
-        type=str,
-        default=None,
-        help="チューニングする手法をカンマ区切りで指定（例: pp または pp,pc）。省略時はconfig.pyで有効な手法。",
-    )
-    parser.add_argument("--seed", type=int, default=3, help="乱数シード")
-    parser.add_argument("--result_root", type=Path, default=Path("./result"), help="結果保存ルート")
-    parser.add_argument("--subdir", type=str, default="exog_sparse_tuning", help="結果保存のサブディレクトリ")
-    parser.add_argument("--output_json", type=Path, default=None, help="保存先を直接指定（指定時はresult_root/subdirは無視）")
-    parser.add_argument("--no_save", action="store_true", help="JSON保存をスキップ")
+    if len(sys.argv) > 1:
+        raise SystemExit("CLI 引数は使用できません。code/config.py を編集してください。")
 
-    args = parser.parse_args()
-
-    methods = None
-    if args.methods is not None:
-        methods = [m.strip() for m in args.methods.split(",") if m.strip()]
+    cfg = get_config()
+    methods = get_enabled_methods()
 
     best, summary = tune_piecewise_all_methods(
-        N=args.N,
-        T=args.T,
-        sparsity=args.sparsity,
-        max_weight=args.max_weight,
-        std_e=args.std_e,
-        K=args.K,
-        tuning_trials=args.tuning_trials,
-        tuning_runs_per_trial=args.tuning_runs_per_trial,
-        seed=args.seed,
+        N=cfg.common.N,
+        T=cfg.common.T,
+        sparsity=cfg.common.sparsity,
+        max_weight=cfg.common.max_weight,
+        std_e=cfg.common.std_e,
+        K=cfg.piecewise.K,
+        tuning_trials=cfg.tuning.tuning_trials,
+        tuning_runs_per_trial=cfg.tuning.tuning_runs_per_trial,
+        seed=cfg.common.seed,
         methods=methods,
     )
 
     print("推定されたハイパラ:")
     print(json.dumps(best, indent=2))
 
-    if args.no_save:
-        return
-
-    if isinstance(args.output_json, Path):
-        args.output_json.parent.mkdir(parents=True, exist_ok=True)
-        with args.output_json.open("w", encoding="utf-8") as f:
-            json.dump(best, f, indent=2)
-        print(f"ハイパラを {args.output_json} に保存しました")
-    else:
-        metadata = {
-            "scenario": "piecewise",
-            "timings": {
-                "overall_sec": float(time.perf_counter() - run_wall_start),
-            },
-            "arguments": {
-                "N": args.N,
-                "T": args.T,
-                "sparsity": args.sparsity,
-                "max_weight": args.max_weight,
-                "std_e": args.std_e,
-                "K": args.K,
-                "tuning_trials": args.tuning_trials,
-                "tuning_runs_per_trial": args.tuning_runs_per_trial,
-                "seed": args.seed,
-            },
-            "tuning_summary": summary,
-        }
-        script_paths = {
-            "hyperparam_tuning": Path(__file__).resolve().parent / "hyperparam_tuning.py",
-            "hypara_tuning_piecewise": Path(__file__),
-            "data_gen": Path(__file__).resolve().parent / "data_gen.py",
-        }
-        out_path = save_best_hyperparams(
-            best,
-            scenario="piecewise",
-            result_root=args.result_root,
-            subdir=args.subdir,
-            metadata=metadata,
-            script_paths=script_paths,
-        )
-        print(f"ハイパラを {out_path} に保存しました")
+    metadata = {
+        "scenario": "piecewise",
+        "timings": {
+            "overall_sec": float(time.perf_counter() - run_wall_start),
+        },
+        "arguments": {
+            "N": cfg.common.N,
+            "T": cfg.common.T,
+            "sparsity": cfg.common.sparsity,
+            "max_weight": cfg.common.max_weight,
+            "std_e": cfg.common.std_e,
+            "K": cfg.piecewise.K,
+            "tuning_trials": cfg.tuning.tuning_trials,
+            "tuning_runs_per_trial": cfg.tuning.tuning_runs_per_trial,
+            "seed": cfg.common.seed,
+            "methods": methods,
+        },
+        "tuning_summary": summary,
+    }
+    script_paths = {
+        "hyperparam_tuning": Path(__file__).resolve().parent / "hyperparam_tuning.py",
+        "hypara_tuning_piecewise": Path(__file__),
+        "data_gen": Path(__file__).resolve().parent / "data_gen.py",
+        "config": Path(__file__).resolve().parent / "config.py",
+    }
+    out_path = save_best_hyperparams(
+        best,
+        scenario="piecewise",
+        result_root=cfg.output.result_root,
+        subdir=cfg.output.subdir_tuning,
+        metadata=metadata,
+        script_paths=script_paths,
+    )
+    print(f"ハイパラを {out_path} に保存しました")
 
 
 if __name__ == '__main__':

@@ -5,48 +5,32 @@
 このスクリプトを実行する前に config.py を編集して設定を変更してください。
 
 使用方法:
-    # piecewise シナリオの実行
-    python -m code.tune_and_run piecewise
-    
-    # linear シナリオの実行
-    python -m code.tune_and_run linear
+    python -m code.tune_and_run
 """
 
 from __future__ import annotations
 
-import copy
-import subprocess
 import sys
 import time
 from pathlib import Path
 from typing import Any, Dict, Optional, Tuple
 import datetime as dt
 
-from code.config import (
-    get_config,
-    get_enabled_methods,
-    get_search_spaces_dict,
-    print_config_summary,
-    SimulationConfig,
-)
+from code.config import get_config, get_enabled_methods, SimulationConfig
 from code.hyperparam_tuning import (
     save_best_hyperparams,
     tune_linear_all_methods,
     tune_piecewise_all_methods,
     SUPPORTED_METHODS,
 )
+from code.run_linear import LinearRunner
+from code.run_piecewise import main as run_piecewise_main
 
 
 SCENARIO_TO_TUNER = {
     "piecewise": tune_piecewise_all_methods,
     "linear": tune_linear_all_methods,
 }
-
-SCENARIO_TO_RUN_MODULE = {
-    "piecewise": "code.run_piecewise",
-    "linear": "code.run_linear",
-}
-
 
 def _format_value(value: object) -> str:
     if value is None:
@@ -137,55 +121,32 @@ def tune_scenario(scenario: str, cfg: SimulationConfig) -> Tuple[Dict[str, Dict[
 
 
 def run_simulation(scenario: str, hyperparam_path: Path, cfg: SimulationConfig) -> None:
-    """シミュレーションを実行"""
-    if scenario not in SCENARIO_TO_RUN_MODULE:
-        raise ValueError(f"未知のシナリオです: {scenario}")
-    
-    python_exec = Path("/User/fmjp/venv/default/bin/python")
-    if not python_exec.exists():
-        python_exec = Path("/Users/fmjp/venv/default/bin/python")
-    if not python_exec.exists():
-        python_exec = Path(sys.executable)
-    
-    module_name = SCENARIO_TO_RUN_MODULE[scenario]
-    
-    # run_piecewise.py / run_linear.py は config.py から設定を読むため、
-    # 必要最小限の引数のみ渡す
-    cmd = [
-        str(python_exec),
-        "-m",
-        module_name,
-        "--hyperparam_json",
-        str(hyperparam_path),
-    ]
-    
-    print(f"実行コマンド: {' '.join(cmd)}")
-    subprocess.run(cmd, check=True)
+    """シミュレーションを実行（CLI引数は使用しない）"""
+    if scenario == "piecewise":
+        run_piecewise_main(hyperparam_path=hyperparam_path)
+        return
+    if scenario == "linear":
+        runner = LinearRunner(hyperparam_path=hyperparam_path)
+        runner.run()
+        return
+    raise ValueError(f"未知のシナリオです: {scenario}")
 
 
 def main() -> None:
     """メイン処理"""
     run_wall_start = time.perf_counter()
-    # シナリオを引数から取得
-    if len(sys.argv) < 2:
-        print("使用方法: python -m code.tune_and_run <scenario>")
-        print("  scenario: piecewise または linear")
-        print("\n設定は code/config.py で変更してください。")
-        sys.exit(1)
+    if len(sys.argv) > 1:
+        raise SystemExit("CLI 引数は使用できません。code/config.py を編集してください。")
     
-    scenario = sys.argv[1].lower()
-    if scenario not in SCENARIO_TO_TUNER:
-        print(f"エラー: 未知のシナリオ '{scenario}'")
-        print(f"利用可能なシナリオ: {', '.join(SCENARIO_TO_TUNER.keys())}")
-        sys.exit(1)
-    
-    # config.py から設定を取得
     cfg = get_config()
+    scenario = str(cfg.scripts.tune_and_run_scenario).lower()
+    if scenario not in SCENARIO_TO_TUNER:
+        raise ValueError(f"未知のシナリオです: {scenario}")
     
     # 設定サマリーを表示
     print_experiment_plan(scenario, cfg)
     
-    # ハイパーパラメータのパスを決定
+    # ハイパーパラメータのパスを決定（config.py が唯一の出所）
     hyperparam_path: Optional[Path] = None
     
     if cfg.hyperparam_json:

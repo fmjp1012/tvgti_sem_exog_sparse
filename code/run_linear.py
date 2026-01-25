@@ -6,17 +6,18 @@ Linear シナリオのシミュレーション実行スクリプト
 
 使用方法:
     python -m code.run_linear
-    python -m code.run_linear --hyperparam_json path/to/hyperparams.json
 """
 
 from __future__ import annotations
 
+import sys
 from typing import Any, Dict, List, Tuple
 
 import numpy as np
 
 from code.data_gen import generate_linear_X_with_exog
-from code.experiment_runner import BaseExperimentRunner, parse_hyperparam_arg
+from code.config import get_config
+from code.experiment_runner import BaseExperimentRunner
 
 
 class LinearRunner(BaseExperimentRunner):
@@ -47,8 +48,10 @@ class LinearRunner(BaseExperimentRunner):
 
 def main() -> None:
     """メイン処理"""
-    hyperparam_path = parse_hyperparam_arg()
-    runner = LinearRunner(hyperparam_path=hyperparam_path)
+    if len(sys.argv) > 1:
+        raise SystemExit("CLI 引数は使用できません。code/config.py を編集してください。")
+    cfg = get_config()
+    runner = LinearRunner(hyperparam_path=cfg.hyperparam_json)
     runner.run()
 
 

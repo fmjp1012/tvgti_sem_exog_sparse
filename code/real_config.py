@@ -4,14 +4,14 @@
 - `code/config.py` と同様に、このファイルを編集して実データ実験の設定を一元管理する。
 - 実行スクリプトは `code/run_real_mismatch_recon.py`。
 
-※ コマンドライン引数でも上書き可能だが、基本はここを編集して使う。
+※ コマンドライン引数による上書きは行わず、このファイルを直接編集して設定してください。
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, Optional
+from typing import Optional
 
 # NOTE:
 # `code/config.py` と同様の `MethodFlags` をここでも定義して、
@@ -22,12 +22,12 @@ from typing import Any, Dict, Optional
 class MethodFlags:
     """実行する手法のフラグ（実データ用）"""
 
-    pp: bool = False
-    pp_sgd: bool = False
-    pc: bool = False
-    co: bool = False
-    sgd: bool = False
-    pg: bool = False
+    pp: bool
+    pp_sgd: bool
+    pc: bool
+    co: bool
+    sgd: bool
+    pg: bool
 
 
 # =============================================================================
@@ -37,16 +37,16 @@ class MethodFlags:
 class RealDataParams:
     """実データの読み込み・前処理設定"""
 
-    csv_path: Path = field(default_factory=lambda: Path("./real/LD2011_2014_tail10000.csv"))
-    slice_mode: str = "tail"  # "tail" or "head"
+    csv_path: Path
+    slice_mode: str  # "tail" or "head"
 
     # 利用する次元
-    N: int = 20
-    T: int = 1000
+    N: int
+    T: int
 
     # 前処理
-    log1p: bool = False
-    standardize: bool = True
+    log1p: bool
+    standardize: bool
 
 
 # =============================================================================
@@ -54,9 +54,9 @@ class RealDataParams:
 # =============================================================================
 @dataclass
 class MaskingParams:
-    mask_ratio: float = 0.2
-    mask_seed: Optional[int] = None
-    recon_ridge: float = 1e-6
+    mask_ratio: float
+    mask_seed: Optional[int]
+    recon_ridge: float
 
 
 # =============================================================================
@@ -64,9 +64,9 @@ class MaskingParams:
 # =============================================================================
 @dataclass
 class RealOutputParams:
-    result_root: Path = field(default_factory=lambda: Path("./result"))
-    subdir_real: str = "real_ld2011_2014"
-    subdir_real_test: str = "real_ld2011_2014_test"
+    result_root: Path
+    subdir_real: str
+    subdir_real_test: str
 
 
 # =============================================================================
@@ -74,7 +74,7 @@ class RealOutputParams:
 # =============================================================================
 @dataclass
 class RealRunParams:
-    show: bool = False
+    show: bool
 
 
 # =============================================================================
@@ -84,9 +84,9 @@ class RealRunParams:
 class RealPlotParams:
     """実データ実験でどの指標をプロットするか"""
 
-    plot_system_mismatch: bool = True
-    plot_recon_B: bool = True
-    plot_recon_C: bool = True
+    plot_system_mismatch: bool
+    plot_recon_B: bool
+    plot_recon_C: bool
 
 
 # =============================================================================
@@ -96,12 +96,12 @@ class RealPlotParams:
 class RealTuningParams:
     """実データに対するOptunaチューニング設定（system mismatch最小化）"""
 
-    tuning_trials: int = 50
-    tuning_seed: int = 4
+    tuning_trials: int
+    tuning_seed: int
     # チューニング時は計算量削減のため短いTで評価（末尾or先頭は data.slice_mode に従う）
-    truncation_T: int = 200
+    truncation_T: int
     # 評価で捨てる先頭のステップ数（オンライン法の初期過渡を無視したい場合）
-    burn_in: int = 0
+    burn_in: int
 
 
 # =============================================================================
@@ -109,20 +109,20 @@ class RealTuningParams:
 # =============================================================================
 @dataclass
 class RealConfig:
-    methods: MethodFlags = field(default_factory=MethodFlags)
-    data: RealDataParams = field(default_factory=RealDataParams)
-    masking: MaskingParams = field(default_factory=MaskingParams)
-    output: RealOutputParams = field(default_factory=RealOutputParams)
-    run: RealRunParams = field(default_factory=RealRunParams)
-    plot: RealPlotParams = field(default_factory=RealPlotParams)
-    tuning: RealTuningParams = field(default_factory=RealTuningParams)
+    methods: MethodFlags
+    data: RealDataParams
+    masking: MaskingParams
+    output: RealOutputParams
+    run: RealRunParams
+    plot: RealPlotParams
+    tuning: RealTuningParams
 
     # 既存のハイパラJSONを使う場合（省略時は code/config.py のデフォルトハイパラを使用）
-    hyperparam_json: Optional[Path] = None
+    hyperparam_json: Optional[Path]
 
     # 実行モード
-    skip_tuning: bool = False
-    skip_run: bool = False
+    skip_tuning: bool
+    skip_run: bool
 
 
 # =============================================================================
@@ -140,10 +140,11 @@ USE_TEST_CONFIG = False
 CONFIG_MAIN = RealConfig(
     methods=MethodFlags(
         pp=True,
+        pp_sgd=False,
         pc=True,
         co=True,
         sgd=True,
-        # pg=True,
+        pg=False,
     ),
     data=RealDataParams(
         csv_path=Path("./real/LD2011_2014_tail10000.csv"),
@@ -183,10 +184,11 @@ CONFIG_MAIN = RealConfig(
 CONFIG_TEST = RealConfig(
     methods=MethodFlags(
         pp=True,
+        pp_sgd=False,
         pc=True,
         co=True,
         sgd=True,
-        # pg=False,
+        pg=False,
     ),
     data=RealDataParams(
         csv_path=Path("./real/LD2011_2014_tail10000.csv"),

@@ -1,9 +1,6 @@
-import os
 import sys
 import datetime
 import time
-import argparse
-import json
 import cvxpy as cp
 
 import numpy as np
@@ -12,6 +9,7 @@ from pathlib import Path
 
 
 from code.config import get_config
+from code.hyperparam_utils import load_hyperparams_json, resolve_hyperparams
 from code.data_gen import generate_piecewise_X_with_exog
 from models.pp_exog import PPExogenousSEM
 from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
@@ -25,71 +23,34 @@ def main():
     apply_style(use_latex=True, font_family="Times New Roman", base_font_size=15)
     run_wall_start = time.perf_counter()
 
-    # パラメータ
-    N = 20
-    T = 1000
-    sparsity = 0.7
-    max_weight = 0.5
-    std_e = 0.05
-    K = 4
-    seed = 3
+    if len(sys.argv) > 1:
+        raise SystemExit("CLI 引数は使用できません。code/config.py を編集してください。")
+
+    cfg = get_config()
+    hp = resolve_hyperparams(load_hyperparams_json(cfg.hyperparam_json), cfg)
+
+    # パラメータ（config.py から）
+    N = int(cfg.common.N)
+    T = int(cfg.common.T)
+    sparsity = float(cfg.common.sparsity)
+    max_weight = float(cfg.common.max_weight)
+    std_e = float(cfg.common.std_e)
+    K = int(cfg.piecewise.K)
+    seed = int(cfg.common.seed)
     rng = np.random.default_rng(seed)
 
-    # 外部設定の読み込み（JSON/CLI）
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", type=str, default=None, help="ハイパラ設定JSONのパス")
-    parser.add_argument("--show_offline_line", type=int, default=0, help="オフラインNSEの横線を描画する(1)/しない(0)")
-    parser.add_argument("--heatmap_time", type=int, default=-1, help="ヒートマップを描画する時刻t（-1で最終時刻）")
-    # 問題スケール上書き
-    parser.add_argument("--N", type=int, default=None, help="ノード数Nを上書き（既定20）")
-    # PPのハイパラ上書き用（任意）
-    parser.add_argument("--pp_r", type=int, default=None, help="PPのrを上書き")
-    parser.add_argument("--pp_q", type=int, default=None, help="PPのqを上書き")
-    parser.add_argument("--pp_rho", type=float, default=None, help="PPのrhoを上書き")
-    parser.add_argument("--pp_mu_lambda", type=float, default=None, help="PPのmu_lambdaを上書き")
-    args, _ = parser.parse_known_args()
-
-    # 既定ハイパラ（fallback）
-    r = 50; q = 5; rho = 1e-3; mu_lambda = 0.05
-    lambda_reg = 1e-3; alpha = 1e-2; beta = 1e-2; gamma = 0.9; P = 1; C = 1
-    beta_co = 0.02
-    beta_sgd = 0.0269
-
-    # JSON 設定で上書き
-    if args.config is not None and os.path.isfile(args.config):
-        with open(args.config, 'r') as f:
-            cfg = json.load(f)
-        pp_cfg = cfg.get('pp', {})
-        r = pp_cfg.get('r', r)
-        q = pp_cfg.get('q', q)
-        rho = pp_cfg.get('rho', rho)
-        mu_lambda = pp_cfg.get('mu_lambda', mu_lambda)
-
-        pc_cfg = cfg.get('pc', {})
-        lambda_reg = pc_cfg.get('lambda_reg', lambda_reg)
-        alpha = pc_cfg.get('alpha', alpha)
-        beta = pc_cfg.get('beta', beta)
-        gamma = pc_cfg.get('gamma', gamma)
-        P = pc_cfg.get('P', P)
-        C = pc_cfg.get('C', C)
-
-        co_cfg = cfg.get('co', {})
-        beta_co = co_cfg.get('beta_co', beta_co)
-
-        sgd_cfg = cfg.get('sgd', {})
-        beta_sgd = sgd_cfg.get('beta_sgd', beta_sgd)
-
-    # CLIでスケール/PPを上書き
-    if args.N is not None:
-        N = int(args.N)
-    if args.pp_r is not None:
-        r = args.pp_r
-    if args.pp_q is not None:
-        q = args.pp_q
-    if args.pp_rho is not None:
-        rho = args.pp_rho
-    if args.pp_mu_lambda is not None:
-        mu_lambda = args.pp_mu_lambda
+    r = int(hp.pp.r)
+    q = int(hp.pp.q)
+    rho = float(hp.pp.rho)
+    mu_lambda = float(hp.pp.mu_lambda)
+    lambda_reg = float(hp.pc.lambda_reg)
+    alpha = float(hp.pc.alpha)
+    beta = float(hp.pc.beta)
+    gamma = float(hp.pc.gamma)
+    P = int(hp.pc.P)
+    C = int(hp.pc.C)
+    beta_co = float(hp.co.beta_co)
+    beta_sgd = float(hp.sgd.beta_sgd)
 
     # 生成
     S_series, T_mat, Z, Y = generate_piecewise_X_with_exog(
@@ -99,10 +60,10 @@ def main():
         max_weight=max_weight,
         std_e=std_e,
         K=K,
-        s_type="random",
-        t_min=0.5,
-        t_max=1.0,
-        z_dist="uniform01",
+        s_type=cfg.data_gen.s_type,
+        t_min=cfg.data_gen.t_min,
+        t_max=cfg.data_gen.t_max,
+        z_dist=cfg.data_gen.z_dist,
         rng=rng,
     )
 
@@ -160,7 +121,7 @@ def main():
     plt.ylabel('Frobenius error')
     plt.grid(True, which='both')
     offline_err = None
-    if args.show_offline_line:
+    if bool(cfg.scripts.run_piecewise_once_show_offline_line):
         offline_err = compute_offline_mean_error_l1(X, S_series, lambda_reg)
         plt.axhline(y=offline_err, color='black', linestyle='--', alpha=0.8, label='Offline SEM+L1 (mean)')
     plt.legend()
@@ -185,7 +146,7 @@ def main():
         suffix=".png",
     )
     print(filename)
-    result_dir = create_result_dir(Path('./result'), 'exog_sparse_piecewise_once', extra_tag='images')
+    result_dir = create_result_dir(cfg.output.result_root, cfg.scripts.run_piecewise_once_output_subdir, extra_tag='images')
     figure_path = Path(result_dir) / filename
     plt.savefig(str(figure_path))
     plt.show()
@@ -196,16 +157,10 @@ def main():
     data_gen_path = Path(__file__).resolve().parent / "data_gen.py"
     if data_gen_path.exists():
         script_copies["data_gen"] = str(backup_script(data_gen_path, scripts_dir))
-    if args.config is not None and os.path.isfile(args.config):
-        config_path = Path(args.config)
-        script_copies["config_json"] = str(backup_script(config_path, scripts_dir))
-    else:
-        config_path = None
-
     # ヒートマップ表示
-    cfg = get_config()
     if cfg.output.save_heatmap:
-        t_idx = args.heatmap_time if args.heatmap_time >= 0 else (T - 1)
+        heatmap_time = int(cfg.scripts.run_piecewise_once_heatmap_time)
+        t_idx = heatmap_time if heatmap_time >= 0 else (T - 1)
         t_idx = max(0, min(T - 1, t_idx))
         heatmap_matrices = {
             'True': S_series[t_idx],
@@ -234,15 +189,9 @@ def main():
             "max_weight": max_weight,
             "std_e": std_e,
             "seed": seed,
-            "config_json": str(config_path) if config_path is not None else None,
-            "cli_overrides": {
-                "pp_r": args.pp_r,
-                "pp_q": args.pp_q,
-                "pp_rho": args.pp_rho,
-                "pp_mu_lambda": args.pp_mu_lambda,
-                "N_override": args.N,
-                "show_offline_line": bool(args.show_offline_line),
-                "heatmap_time": args.heatmap_time,
+            "script_settings": {
+                "show_offline_line": bool(cfg.scripts.run_piecewise_once_show_offline_line),
+                "heatmap_time": int(cfg.scripts.run_piecewise_once_heatmap_time),
             },
         },
         "methods": {
@@ -255,9 +204,9 @@ def main():
         "generator": {
             "function": "code.data_gen.generate_piecewise_X_with_exog",
             "kwargs": {
-                "t_min": 0.5,
-                "t_max": 1.0,
-                "z_dist": "uniform01",
+                "t_min": cfg.data_gen.t_min,
+                "t_max": cfg.data_gen.t_max,
+                "z_dist": cfg.data_gen.z_dist,
             },
         },
         "results": {
@@ -272,7 +221,7 @@ def main():
                 "co_fro": err_co,
                 "sgd_fro": err_sgd,
                 "pc_l1c_fro": err_pc_l1c,
-                "offline_mean": float(offline_err) if args.show_offline_line else None,
+                "offline_mean": float(offline_err) if cfg.scripts.run_piecewise_once_show_offline_line else None,
             },
         },
         "snapshots": script_copies,

@@ -6,7 +6,6 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import subprocess
 import sys
@@ -47,21 +46,6 @@ class ExperimentResult:
     result_dir: Optional[Path] = None
     figure_path: Optional[Path] = None
     figure_paths: List[Path] = field(default_factory=list)
-
-
-def parse_hyperparam_arg() -> Optional[Path]:
-    """コマンドライン引数からハイパラJSONパスをパースする。"""
-    parser = argparse.ArgumentParser(
-        description="シミュレーション実行（設定は config.py で変更）"
-    )
-    parser.add_argument(
-        "--hyperparam_json",
-        type=Path,
-        default=None,
-        help="ハイパーパラメータJSONのパス（省略時はconfig.pyのデフォルト値を使用）",
-    )
-    args = parser.parse_args()
-    return args.hyperparam_json
 
 
 class BaseExperimentRunner(ABC):

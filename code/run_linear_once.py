@@ -1,4 +1,3 @@
-import os
 import sys
 import datetime
 import time
@@ -9,6 +8,7 @@ from pathlib import Path
 
 
 from code.config import get_config
+from code.hyperparam_utils import load_hyperparams_json, resolve_hyperparams
 from code.data_gen import generate_linear_X_with_exog
 from models.pp_exog import PPExogenousSEM
 from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
@@ -20,12 +20,18 @@ def main():
     apply_style(use_latex=True, font_family="Times New Roman", base_font_size=15)
     run_wall_start = time.perf_counter()
 
-    N = 20
-    T = 1000
-    sparsity = 0.6
-    max_weight = 0.5
-    std_e = 0.05
-    seed = 3
+    if len(sys.argv) > 1:
+        raise SystemExit("CLI 引数は使用できません。code/config.py を編集してください。")
+
+    cfg = get_config()
+    hp = resolve_hyperparams(load_hyperparams_json(cfg.hyperparam_json), cfg)
+
+    N = int(cfg.common.N)
+    T = int(cfg.common.T)
+    sparsity = float(cfg.common.sparsity)
+    max_weight = float(cfg.common.max_weight)
+    std_e = float(cfg.common.std_e)
+    seed = int(cfg.common.seed)
     rng = np.random.default_rng(seed)
 
     S_series, T_mat, Z, Y = generate_linear_X_with_exog(
@@ -34,28 +40,36 @@ def main():
         sparsity=sparsity,
         max_weight=max_weight,
         std_e=std_e,
-        s_type="random",
-        t_min=0.5,
-        t_max=1.0,
-        z_dist="uniform01",
+        s_type=cfg.data_gen.s_type,
+        t_min=cfg.data_gen.t_min,
+        t_max=cfg.data_gen.t_max,
+        z_dist=cfg.data_gen.z_dist,
         rng=rng,
     )
 
     S0 = np.zeros((N, N)); b0 = np.ones(N)
-    r = 50; q = 5; rho = 1e-3; mu_lambda = 0.05
+    r = int(hp.pp.r)
+    q = int(hp.pp.q)
+    rho = float(hp.pp.rho)
+    mu_lambda = float(hp.pp.mu_lambda)
     pp = PPExogenousSEM(N, S0, b0, r=r, q=q, rho=rho, mu_lambda=mu_lambda)
     S_hat_list, _ = pp.run(Y, Z)
 
     # PC/CO/SGD baselines
     X = Y
     S0_pc = np.zeros((N, N))
-    lambda_reg = 1e-3; alpha = 1e-2; beta = 1e-2; gamma = 0.9; P = 1; C = 1
+    lambda_reg = float(hp.pc.lambda_reg)
+    alpha = float(hp.pc.alpha)
+    beta = float(hp.pc.beta)
+    gamma = float(hp.pc.gamma)
+    P = int(hp.pc.P)
+    C = int(hp.pc.C)
     pc = PCSEM(N, S0_pc, lambda_reg, alpha, beta, gamma, P, C, show_progress=False, name="pc_baseline", T_init=T_mat)
     estimates_pc, _ = pc.run(X, Z)
-    beta_co = 0.02
+    beta_co = float(hp.co.beta_co)
     co = PCSEM(N, S0_pc, lambda_reg, alpha, beta_co, gamma, 0, C, show_progress=False, name="co_baseline", T_init=T_mat)
     estimates_co, _ = co.run(X, Z)
-    beta_sgd = 0.0269
+    beta_sgd = float(hp.sgd.beta_sgd)
     sgd = PCSEM(N, S0_pc, lambda_reg, alpha, beta_sgd, 0.0, 0, C, show_progress=False, name="sgd_baseline", T_init=T_mat)
     estimates_sgd, _ = sgd.run(X, Z)
 
@@ -106,7 +120,7 @@ def main():
         suffix=".png",
     )
     print(filename)
-    result_dir = create_result_dir(Path('./result'), 'exog_sparse_linear_once', extra_tag='images')
+    result_dir = create_result_dir(cfg.output.result_root, cfg.scripts.run_linear_once_output_subdir, extra_tag='images')
     figure_path = Path(result_dir) / filename
     plt.savefig(str(figure_path))
     plt.show()
@@ -159,9 +173,9 @@ def main():
         "generator": {
             "function": "code.data_gen.generate_linear_X_with_exog",
             "kwargs": {
-                "t_min": 0.5,
-                "t_max": 1.0,
-                "z_dist": "uniform01",
+                "t_min": cfg.data_gen.t_min,
+                "t_max": cfg.data_gen.t_max,
+                "z_dist": cfg.data_gen.z_dist,
             },
         },
         "results": {

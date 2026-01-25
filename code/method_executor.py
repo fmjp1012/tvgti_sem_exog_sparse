@@ -96,7 +96,9 @@ class MethodExecutor:
         self.flags = flags
         self.hp = hyperparams
         self.error_normalization = error_normalization
-        self.comparison = comparison if comparison is not None else ComparisonParams()
+        if comparison is None:
+            raise ValueError("comparison must be provided from config (ComparisonParams).")
+        self.comparison = comparison
         self.divide_by_n2 = bool(divide_by_n2)
         self.error_variants = error_variants or []
         self._primary_variant_key = self._variant_key(self.error_normalization, self.divide_by_n2)

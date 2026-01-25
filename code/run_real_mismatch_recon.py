@@ -16,9 +16,6 @@
 
 使用方法:
     /Users/fmjp/venv/default/bin/python -m code.run_real_mismatch_recon
-    /Users/fmjp/venv/default/bin/python -m code.run_real_mismatch_recon --hyperparam_json path/to/hyperparams.json
-    /Users/fmjp/venv/default/bin/python -m code.run_real_mismatch_recon --N 50 --T 2000
-    /Users/fmjp/venv/default/bin/python -m code.run_real_mismatch_recon --test
 
 注意:
 - 既定の N, T, 実行手法フラグ等は code/real_config.py を参照します。
@@ -27,7 +24,6 @@
 
 from __future__ import annotations
 
-import argparse
 import json
 import math
 import sys
@@ -41,104 +37,13 @@ import numpy as np
 
 from code.config import get_config
 from code.hyperparam_utils import hyperparams_to_dict, load_hyperparams_json, resolve_hyperparams
-from code.real_config import get_real_config
+from code.real_config import USE_TEST_CONFIG, get_real_config
 from models.pg_batch import ProximalGradientBatchSEM, ProximalGradientConfig
 from models.pp_exog import PPExogenousSEM
 from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
 from utils.io.plotting import apply_style
 from utils.io.results import backup_script, create_result_dir, make_result_filename, save_json
 from utils.offline_solver import solve_offline_sem_lasso_batch
-
-
-def parse_args() -> argparse.Namespace:
-    parser = argparse.ArgumentParser(description="Realデータで system mismatch / reconstruction error を比較")
-    parser.add_argument(
-        "--test",
-        action="store_true",
-        default=False,
-        help="軽量テスト実行（N/Tを小さく上書き）",
-    )
-    parser.add_argument(
-        "--hyperparam_json",
-        type=Path,
-        default=None,
-        help="ハイパーパラメータJSONのパス（省略時はconfig.pyのデフォルト値）",
-    )
-    parser.add_argument(
-        "--csv_path",
-        type=Path,
-        default=None,
-        help="入力CSV（1列目timestamp、以降が系列）",
-    )
-    parser.add_argument(
-        "--N",
-        type=int,
-        default=None,
-        help="使用するノード数（CSVの先頭からN列分）。省略時はconfig.pyのN。",
-    )
-    parser.add_argument(
-        "--T",
-        type=int,
-        default=None,
-        help="使用する時系列長。省略時はconfig.pyのT。",
-    )
-    parser.add_argument(
-        "--tail",
-        "--use_last_rows",
-        dest="use_last_rows",
-        action="store_true",
-        default=None,
-        help="T個を末尾から切り出す（デフォルトON）",
-    )
-    parser.add_argument(
-        "--head",
-        dest="use_last_rows",
-        action="store_false",
-        help="T個を先頭から切り出す",
-    )
-    parser.add_argument(
-        "--standardize",
-        action="store_true",
-        default=False,
-        help="各ノード系列をz-score標準化する（デフォルトON）",
-    )
-    parser.add_argument(
-        "--no_standardize",
-        action="store_true",
-        default=False,
-        help="標準化を無効化（--standardize より優先）",
-    )
-    parser.add_argument(
-        "--log1p",
-        action="store_true",
-        default=False,
-        help="log1p変換（標準化より前に適用）",
-    )
-    parser.add_argument(
-        "--mask_ratio",
-        type=float,
-        default=None,
-        help="再構成誤差(2C)の欠損率（0-1）",
-    )
-    parser.add_argument(
-        "--mask_seed",
-        type=int,
-        default=None,
-        help="マスク用seed（省略時はconfig.pyのseedを使用）",
-    )
-    parser.add_argument(
-        "--recon_ridge",
-        type=float,
-        default=None,
-        help="再構成(2C)のリッジ（数値安定化）",
-    )
-    parser.add_argument(
-        "--show",
-        action="store_true",
-        default=False,
-        help="図を表示する（保存は常に行う）",
-    )
-    return parser.parse_args()
 
 
 def _load_real_csv(csv_path: Path, N: int) -> Tuple[np.ndarray, List[str]]:
@@ -316,37 +221,24 @@ def _summarize(series: List[float]) -> Dict[str, float]:
 
 
 def main() -> None:
-    args = parse_args()
+    if len(sys.argv) > 1:
+        raise SystemExit("CLI 引数は使用できません。code/real_config.py を編集してください。")
     cfg = get_config()
     real_cfg = get_real_config()
 
     apply_style(use_latex=True, font_family="Times New Roman", base_font_size=15)
     run_wall_start = time.perf_counter()
 
-    hyperparam_path = args.hyperparam_json if args.hyperparam_json is not None else real_cfg.hyperparam_json
+    hyperparam_path = real_cfg.hyperparam_json
     loaded_hp = load_hyperparams_json(hyperparam_path)
     hp = resolve_hyperparams(loaded_hp, cfg)
 
-    # N/T は config.py がデフォルト。CLI指定があれば上書き。
-    # --test はさらに上書き（短時間で終わるためのプリセット）。
     N_cfg = int(real_cfg.data.N)
     T_cfg = int(real_cfg.data.T)
-    if args.N is not None:
-        N_cfg = int(args.N)
-    if args.T is not None:
-        T_cfg = int(args.T)
-    if bool(args.test):
-        N_cfg = int(min(N_cfg, 5))
-        T_cfg = int(min(T_cfg, 200))
-
-    csv_path = args.csv_path if args.csv_path is not None else real_cfg.data.csv_path
+    csv_path = real_cfg.data.csv_path
     X_full, colnames = _load_real_csv(csv_path, N=N_cfg)
 
-    # 切り出し方向（CLI優先、未指定なら real_config.data.slice_mode）
-    use_last_rows = args.use_last_rows
-    if use_last_rows is None:
-        use_last_rows = str(real_cfg.data.slice_mode).lower() != "head"
-
+    use_last_rows = str(real_cfg.data.slice_mode).lower() != "head"
     if use_last_rows:
         T_use = min(T_cfg, X_full.shape[1])
         X_raw = X_full[:, -T_use:]
@@ -354,8 +246,8 @@ def main() -> None:
         T_use = min(T_cfg, X_full.shape[1])
         X_raw = X_full[:, :T_use]
 
-    log1p = bool(args.log1p) if args.log1p else bool(real_cfg.data.log1p)
-    standardize = (bool(args.standardize) or bool(real_cfg.data.standardize)) and (not bool(args.no_standardize))
+    log1p = bool(real_cfg.data.log1p)
+    standardize = bool(real_cfg.data.standardize)
     X = _preprocess(X_raw, log1p=log1p, standardize=standardize)
 
     N = X.shape[0]
@@ -364,9 +256,9 @@ def main() -> None:
     # 外生入力はとりあえず Z=0
     Z = np.zeros_like(X)
 
-    # 2C の欠損設定（実データconfigがデフォルト、CLIで上書き）
-    mask_ratio = float(real_cfg.masking.mask_ratio) if args.mask_ratio is None else float(args.mask_ratio)
-    recon_ridge = float(real_cfg.masking.recon_ridge) if args.recon_ridge is None else float(args.recon_ridge)
+    # 2C の欠損設定（実データconfig）
+    mask_ratio = float(real_cfg.masking.mask_ratio)
+    recon_ridge = float(real_cfg.masking.recon_ridge)
 
     # 実行フラグ（実データ設定から）
     run_pp = bool(real_cfg.methods.pp)
@@ -378,11 +270,11 @@ def main() -> None:
 
     # 乱数（欠損復元用）
     default_mask_seed = real_cfg.masking.mask_seed if real_cfg.masking.mask_seed is not None else int(cfg.common.seed)
-    mask_seed = int(default_mask_seed) if args.mask_seed is None else int(args.mask_seed)
+    mask_seed = int(default_mask_seed)
     rng = np.random.default_rng(mask_seed)
 
     # 出力ディレクトリ
-    scenario_name = real_cfg.output.subdir_real_test if bool(args.test) else real_cfg.output.subdir_real
+    scenario_name = real_cfg.output.subdir_real_test if USE_TEST_CONFIG else real_cfg.output.subdir_real
     result_dir = create_result_dir(real_cfg.output.result_root, scenario_name, extra_tag="images")
 
     # ------------------------------------------------------------
@@ -596,7 +488,7 @@ def main() -> None:
         plt.tight_layout()
         save_path = Path(result_dir) / out_name
         plt.savefig(str(save_path), bbox_inches="tight")
-        if bool(args.show) or bool(real_cfg.run.show):
+        if bool(real_cfg.run.show):
             plt.show()
         else:
             plt.close()

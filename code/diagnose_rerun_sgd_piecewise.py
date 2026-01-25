@@ -7,22 +7,16 @@ Piecewise 実験結果に対して、SGD のみを再計算して診断・差し
 - 既存の *_meta.json の `results.metrics.sgd` を SGD 再計算結果で置き換えたい
 - 既存の figure PNG を（他手法の曲線は meta の値のまま）SGD だけ差し替えて上書き保存したい
 
-使い方例
---------
-SGD の outlier seed を調べる（差し替えはしない）:
-    python -m code.diagnose_rerun_sgd_piecewise --meta_json path/to/*_meta.json
-
-SGD の平均系列を meta に差し替え（別ファイルに保存）:
-    python -m code.diagnose_rerun_sgd_piecewise --meta_json ... --write_updated_meta
-
-SGD の平均系列を meta に差し替え、PNG も上書き:
-    python -m code.diagnose_rerun_sgd_piecewise --meta_json ... --write_updated_meta --overwrite_figure
+使い方
+------
+    python -m code.diagnose_rerun_sgd_piecewise
+    設定は code/config.py の scripts.diagnose_rerun_sgd_piecewise を編集してください。
 """
 
 from __future__ import annotations
 
-import argparse
 import json
+import sys
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
@@ -34,6 +28,7 @@ from joblib import Parallel, delayed
 from tqdm import tqdm
 from tqdm_joblib import tqdm_joblib
 
+from code.config import get_config
 from code.data_gen import generate_piecewise_X_with_exog
 from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
 from utils.io.plotting import apply_style
@@ -313,42 +308,18 @@ def _plot_with_replaced_sgd(meta: Dict[str, Any], new_sgd_mean: np.ndarray, save
     plt.close()
 
 
-def parse_args() -> argparse.Namespace:
-    p = argparse.ArgumentParser(description="SGD を再計算して outlier 診断/差し替え")
-    p.add_argument("--meta_json", type=Path, required=True, help="対象の *_meta.json")
-    p.add_argument("--hyperparam_json", type=Path, default=None, help="ハイパラJSON（省略時は meta から推定）")
-    p.add_argument("--n_jobs", type=int, default=-1, help="joblib 並列数（-1: 全コア）")
-    p.add_argument("--topk", type=int, default=10, help="outlier として表示する上位件数")
-    p.add_argument(
-        "--exclude_top_by_max",
-        type=int,
-        default=0,
-        help="最大誤差が大きい trial を上位K件除外して平均を計算（0で無効）",
-    )
-    p.add_argument(
-        "--exclude_seeds",
-        type=int,
-        nargs="*",
-        default=None,
-        help="除外する seed を明示指定（例: --exclude_seeds 5 84）",
-    )
-    p.add_argument("--write_updated_meta", action="store_true", help="SGD平均系列を meta に反映したJSONを保存")
-    p.add_argument("--inplace", action="store_true", help="meta_json を上書き（write_updated_meta と併用推奨）")
-    p.add_argument("--overwrite_figure", action="store_true", help="metaにある figure_path の PNG を上書き")
-    p.add_argument("--figure_out", type=Path, default=None, help="figure の保存先（省略時は meta の figure_path）")
-    p.add_argument("--no_show", action="store_true", help="plt.show() しない")
-    return p.parse_args()
-
-
 def main() -> None:
-    args = parse_args()
+    if len(sys.argv) > 1:
+        raise SystemExit("CLI 引数は使用できません。code/config.py を編集してください。")
+    cfg = get_config()
+    params = cfg.scripts.diagnose_rerun_sgd_piecewise
 
-    meta_path = _resolve_path(args.meta_json)
+    meta_path = _resolve_path(params.meta_json)
     meta = _load_json(meta_path)
 
     hp_path: Optional[Path]
-    if args.hyperparam_json is not None:
-        hp_path = _resolve_path(args.hyperparam_json)
+    if params.hyperparam_json is not None:
+        hp_path = _resolve_path(params.hyperparam_json)
     else:
         hp_path = _extract_hyperparam_json_path_from_meta(meta)
 
@@ -357,7 +328,7 @@ def main() -> None:
     # 並列で SGD を再計算
     seeds = run_cfg.trial_seeds
     with tqdm_joblib(tqdm(desc="SGD rerun", total=len(seeds))):
-        results = Parallel(n_jobs=args.n_jobs, batch_size=1, prefer="threads")(
+        results = Parallel(n_jobs=params.n_jobs, batch_size=1, prefer="threads")(
             delayed(_run_one_trial_sgd)(run_cfg, s) for s in seeds
         )
 
@@ -371,16 +342,16 @@ def main() -> None:
     has_nan = any(bool(r["has_nan"]) for r in results)
     has_inf = any(bool(r["has_inf"]) for r in results)
 
-    topk = int(args.topk)
+    topk = int(params.topk)
     idx_max = np.argsort(-error_max)[:topk]
     idx_final = np.argsort(-error_final)[:topk]
 
     # 除外指定がある場合は、平均を「フィルタ後」で計算する
     excluded_seeds: List[int] = []
-    if args.exclude_seeds:
-        excluded_seeds.extend([int(s) for s in args.exclude_seeds])
-    if int(args.exclude_top_by_max) > 0:
-        k = int(args.exclude_top_by_max)
+    if params.exclude_seeds:
+        excluded_seeds.extend([int(s) for s in params.exclude_seeds])
+    if int(params.exclude_top_by_max) > 0:
+        k = int(params.exclude_top_by_max)
         excluded_seeds.extend([int(results[int(i)]["seed"]) for i in np.argsort(-error_max)[:k]])
     excluded_seeds = sorted(set(excluded_seeds))
 
@@ -461,7 +432,7 @@ def main() -> None:
     print(f"[saved] {report_path}")
 
     # meta 更新（必要なら）
-    if args.write_updated_meta:
+    if params.write_updated_meta:
         updated = dict(meta)
         updated.setdefault("results", {}).setdefault("metrics", {})
         updated["results"]["metrics"]["sgd"] = sgd_mean.tolist()
@@ -471,7 +442,7 @@ def main() -> None:
             "report": str(report_path),
         }
 
-        if args.inplace:
+        if params.inplace:
             updated_meta_path = meta_path
         else:
             updated_meta_path = out_dir / f"{meta_path.stem}_UPDATED_SGD_meta.json"
@@ -479,18 +450,17 @@ def main() -> None:
         print(f"[saved] {updated_meta_path}")
 
         # figure 上書き（必要なら）
-        if args.overwrite_figure:
-            if args.figure_out is not None:
-                fig_path = _resolve_path(args.figure_out)
+        if params.overwrite_figure:
+            if params.figure_out is not None:
+                fig_path = _resolve_path(params.figure_out)
             else:
                 fig_rel = meta.get("results", {}).get("figure_path", None)
                 if not isinstance(fig_rel, str) or not fig_rel.strip():
                     raise ValueError("meta['results']['figure_path'] が見つかりません")
                 fig_path = _resolve_path(fig_rel)
-            _plot_with_replaced_sgd(updated, sgd_mean, fig_path, show=(not args.no_show))
+            _plot_with_replaced_sgd(updated, sgd_mean, fig_path, show=(not params.no_show))
             print(f"[saved] {fig_path}")
 
 
 if __name__ == "__main__":
     main()
-
