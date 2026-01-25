@@ -353,7 +353,6 @@ class OutputParams:
     subdir_linear: str = "exog_sparse_linear"
     subdir_tuning: str = "exog_sparse_tuning"
     save_heatmap: bool = True  # ヒートマップ画像を保存するか
-    save_sim_data: bool = False  # 生成データ/乱数状態を保存するか
 
 
 # =============================================================================
@@ -597,8 +596,7 @@ CONFIG_MAIN = SimulationConfig(
         subdir_piecewise="exog_sparse_piecewise",
         subdir_linear="exog_sparse_linear",
         subdir_tuning="exog_sparse_tuning",
-        save_images=False,
-        save_sim_data=True,
+        save_heatmap=False,
     ),
     
     # 実行モード

@@ -59,9 +59,11 @@ class MethodFlags:
 class TrialResult:
     """試行結果"""
     errors: Dict[str, List[float]] = field(default_factory=dict)
+    errors_by_variant: Dict[str, Dict[str, List[float]]] = field(default_factory=dict)
     estimates_final: Dict[str, np.ndarray] = field(default_factory=dict)
     trial_seed: Optional[int] = None
     data_path: Optional[str] = None
+    timing: Dict[str, float] = field(default_factory=dict)
 
 
 class MethodExecutor:
@@ -88,6 +90,7 @@ class MethodExecutor:
         error_normalization: str = "true_value",
         comparison: Optional[ComparisonParams] = None,
         divide_by_n2: bool = False,
+        error_variants: Optional[List[Dict[str, object]]] = None,
     ):
         self.N = N
         self.flags = flags
@@ -95,9 +98,36 @@ class MethodExecutor:
         self.error_normalization = error_normalization
         self.comparison = comparison if comparison is not None else ComparisonParams()
         self.divide_by_n2 = bool(divide_by_n2)
+        self.error_variants = error_variants or []
+        self._primary_variant_key = self._variant_key(self.error_normalization, self.divide_by_n2)
         
         # PC法の初期行列
         self._S0_pc = np.zeros((N, N))
+
+    @staticmethod
+    def _variant_key(normalization: str, divide_by_n2: bool) -> str:
+        norm_tag = "true" if normalization == "true_value" else "offline"
+        return f"{norm_tag}_n2={int(bool(divide_by_n2))}"
+
+    def _compute_errors_for_variants(
+        self,
+        S_hat_list: List[np.ndarray],
+        S_series: List[np.ndarray],
+        S_offline: Optional[np.ndarray],
+    ) -> Dict[str, List[float]]:
+        if not self.error_variants:
+            return {}
+        errors_by_variant: Dict[str, List[float]] = {}
+        for variant in self.error_variants:
+            key = str(variant["key"])
+            errors_by_variant[key] = compute_error_series(
+                S_hat_list,
+                S_series,
+                S_offline,
+                str(variant["normalization"]),
+                bool(variant["divide_by_n2"]),
+            )
+        return errors_by_variant
 
     def _resolve_pc_T_init(self, T_true: np.ndarray) -> np.ndarray:
         """PC/CO/SGD に与える T_init を比較設定に従って決める。"""
@@ -121,17 +151,17 @@ class MethodExecutor:
         S_series: List[np.ndarray],
         T_true: np.ndarray,
         S_offline: Optional[np.ndarray],
-    ) -> Tuple[Optional[List[float]], Optional[np.ndarray]]:
+    ) -> Tuple[Optional[List[float]], Optional[np.ndarray], Dict[str, List[float]]]:
         """
         PP法を実行する。
 
         Returns
         -------
-        Tuple[errors, final_estimate]
-            誤差リストと最終推定値（無効の場合はNone）
+        Tuple[errors, final_estimate, errors_by_variant]
+            誤差リストと最終推定値（無効の場合はNone）、全バリアントの誤差
         """
         if not self.flags.pp:
-            return None, None
+            return None, None, {}
         
         S0 = np.zeros((self.N, self.N))
         b0 = self._resolve_pp_b0(T_true)
@@ -147,15 +177,17 @@ class MethodExecutor:
             lookahead=lookahead,
         )
         S_hat_list, _ = model.run(Y, U)
-        
-        errors = compute_error_series(
-            S_hat_list,
-            S_series,
-            S_offline,
-            self.error_normalization,
-            self.divide_by_n2,
-        )
-        return errors, S_hat_list[-1]
+        errors_by_variant = self._compute_errors_for_variants(S_hat_list, S_series, S_offline)
+        errors = errors_by_variant.get(self._primary_variant_key)
+        if errors is None:
+            errors = compute_error_series(
+                S_hat_list,
+                S_series,
+                S_offline,
+                self.error_normalization,
+                self.divide_by_n2,
+            )
+        return errors, S_hat_list[-1], errors_by_variant
 
     def execute_pp_sgd(
         self,
@@ -164,7 +196,7 @@ class MethodExecutor:
         S_series: List[np.ndarray],
         T_true: np.ndarray,
         S_offline: Optional[np.ndarray],
-    ) -> Tuple[Optional[List[float]], Optional[np.ndarray]]:
+    ) -> Tuple[Optional[List[float]], Optional[np.ndarray], Dict[str, List[float]]]:
         """
         PP-SGD（q=1, r=1固定）を実行する。
 
@@ -172,7 +204,7 @@ class MethodExecutor:
         - それ以外（rho/mu_lambda/lambda_S, 初期化など）は通常のPPと同様。
         """
         if not getattr(self.flags, "pp_sgd", False):
-            return None, None
+            return None, None, {}
 
         # 互換性のため pp_sgd が未定義なら pp を流用
         hp_ppsgd = getattr(self.hp, "pp_sgd", self.hp.pp)
@@ -197,15 +229,17 @@ class MethodExecutor:
             lookahead=int(lookahead),
         )
         S_hat_list, _ = model.run(Y, U)
-
-        errors = compute_error_series(
-            S_hat_list,
-            S_series,
-            S_offline,
-            self.error_normalization,
-            self.divide_by_n2,
-        )
-        return errors, S_hat_list[-1]
+        errors_by_variant = self._compute_errors_for_variants(S_hat_list, S_series, S_offline)
+        errors = errors_by_variant.get(self._primary_variant_key)
+        if errors is None:
+            errors = compute_error_series(
+                S_hat_list,
+                S_series,
+                S_offline,
+                self.error_normalization,
+                self.divide_by_n2,
+            )
+        return errors, S_hat_list[-1], errors_by_variant
     
     def execute_pc(
         self,
@@ -214,17 +248,17 @@ class MethodExecutor:
         S_series: List[np.ndarray],
         S_offline: Optional[np.ndarray],
         T_init: np.ndarray,
-    ) -> Tuple[Optional[List[float]], Optional[np.ndarray]]:
+    ) -> Tuple[Optional[List[float]], Optional[np.ndarray], Dict[str, List[float]]]:
         """
         PC法を実行する。
 
         Returns
         -------
-        Tuple[errors, final_estimate]
-            誤差リストと最終推定値（無効の場合はNone）
+        Tuple[errors, final_estimate, errors_by_variant]
+            誤差リストと最終推定値（無効の場合はNone）、全バリアントの誤差
         """
         if not self.flags.pc:
-            return None, None
+            return None, None, {}
         pc_model = str(getattr(self.comparison, "pc_model", "exog")).strip()
         if pc_model == "noexog":
             pc = PCSEMNoExog(
@@ -256,11 +290,13 @@ class MethodExecutor:
                 T_init=T_init,
             )
             estimates_pc, _ = pc.run(X, Z)
-        
-        errors = compute_error_series(
-            estimates_pc, S_series, S_offline, self.error_normalization, self.divide_by_n2
-        )
-        return errors, estimates_pc[-1]
+        errors_by_variant = self._compute_errors_for_variants(estimates_pc, S_series, S_offline)
+        errors = errors_by_variant.get(self._primary_variant_key)
+        if errors is None:
+            errors = compute_error_series(
+                estimates_pc, S_series, S_offline, self.error_normalization, self.divide_by_n2
+            )
+        return errors, estimates_pc[-1], errors_by_variant
     
     def execute_co(
         self,
@@ -269,17 +305,17 @@ class MethodExecutor:
         S_series: List[np.ndarray],
         S_offline: Optional[np.ndarray],
         T_init: np.ndarray,
-    ) -> Tuple[Optional[List[float]], Optional[np.ndarray]]:
+    ) -> Tuple[Optional[List[float]], Optional[np.ndarray], Dict[str, List[float]]]:
         """
         CO法を実行する。
 
         Returns
         -------
-        Tuple[errors, final_estimate]
-            誤差リストと最終推定値（無効の場合はNone）
+        Tuple[errors, final_estimate, errors_by_variant]
+            誤差リストと最終推定値（無効の場合はNone）、全バリアントの誤差
         """
         if not self.flags.co:
-            return None, None
+            return None, None, {}
         pc_model = str(getattr(self.comparison, "pc_model", "exog")).strip()
         if pc_model == "noexog":
             co = PCSEMNoExog(
@@ -311,11 +347,13 @@ class MethodExecutor:
                 T_init=T_init,
             )
             estimates_co, _ = co.run(X, Z)
-        
-        errors = compute_error_series(
-            estimates_co, S_series, S_offline, self.error_normalization, self.divide_by_n2
-        )
-        return errors, estimates_co[-1]
+        errors_by_variant = self._compute_errors_for_variants(estimates_co, S_series, S_offline)
+        errors = errors_by_variant.get(self._primary_variant_key)
+        if errors is None:
+            errors = compute_error_series(
+                estimates_co, S_series, S_offline, self.error_normalization, self.divide_by_n2
+            )
+        return errors, estimates_co[-1], errors_by_variant
     
     def execute_sgd(
         self,
@@ -324,17 +362,17 @@ class MethodExecutor:
         S_series: List[np.ndarray],
         S_offline: Optional[np.ndarray],
         T_init: np.ndarray,
-    ) -> Tuple[Optional[List[float]], Optional[np.ndarray]]:
+    ) -> Tuple[Optional[List[float]], Optional[np.ndarray], Dict[str, List[float]]]:
         """
         SGD法を実行する。
 
         Returns
         -------
-        Tuple[errors, final_estimate]
-            誤差リストと最終推定値（無効の場合はNone）
+        Tuple[errors, final_estimate, errors_by_variant]
+            誤差リストと最終推定値（無効の場合はNone）、全バリアントの誤差
         """
         if not self.flags.sgd:
-            return None, None
+            return None, None, {}
         pc_model = str(getattr(self.comparison, "pc_model", "exog")).strip()
         if pc_model == "noexog":
             sgd = PCSEMNoExog(
@@ -366,11 +404,13 @@ class MethodExecutor:
                 T_init=T_init,
             )
             estimates_sgd, _ = sgd.run(X, Z)
-        
-        errors = compute_error_series(
-            estimates_sgd, S_series, S_offline, self.error_normalization, self.divide_by_n2
-        )
-        return errors, estimates_sgd[-1]
+        errors_by_variant = self._compute_errors_for_variants(estimates_sgd, S_series, S_offline)
+        errors = errors_by_variant.get(self._primary_variant_key)
+        if errors is None:
+            errors = compute_error_series(
+                estimates_sgd, S_series, S_offline, self.error_normalization, self.divide_by_n2
+            )
+        return errors, estimates_sgd[-1], errors_by_variant
     
     def execute_pg(
         self,
@@ -378,17 +418,17 @@ class MethodExecutor:
         Z: np.ndarray,
         S_series: List[np.ndarray],
         S_offline: Optional[np.ndarray],
-    ) -> Tuple[Optional[List[float]], Optional[np.ndarray]]:
+    ) -> Tuple[Optional[List[float]], Optional[np.ndarray], Dict[str, List[float]]]:
         """
         PG法を実行する。
 
         Returns
         -------
-        Tuple[errors, final_estimate]
-            誤差リストと最終推定値（無効の場合はNone）
+        Tuple[errors, final_estimate, errors_by_variant]
+            誤差リストと最終推定値（無効の場合はNone）、全バリアントの誤差
         """
         if not self.flags.pg:
-            return None, None
+            return None, None, {}
         
         pg_config = ProximalGradientConfig(
             lambda_reg=self.hp.pg.lambda_reg,
@@ -403,11 +443,13 @@ class MethodExecutor:
         )
         pg_model = ProximalGradientBatchSEM(self.N, pg_config)
         estimates_pg, _ = pg_model.run(X, Z)
-        
-        errors = compute_error_series(
-            estimates_pg, S_series, S_offline, self.error_normalization, self.divide_by_n2
-        )
-        return errors, estimates_pg[-1]
+        errors_by_variant = self._compute_errors_for_variants(estimates_pg, S_series, S_offline)
+        errors = errors_by_variant.get(self._primary_variant_key)
+        if errors is None:
+            errors = compute_error_series(
+                estimates_pg, S_series, S_offline, self.error_normalization, self.divide_by_n2
+            )
+        return errors, estimates_pg[-1], errors_by_variant
     
     def execute_all(
         self,
@@ -439,57 +481,95 @@ class MethodExecutor:
             各手法の誤差と最終推定値
         """
         result = TrialResult()
+        if self.error_variants:
+            result.errors_by_variant = {str(v["key"]): {} for v in self.error_variants}
         result.estimates_final["True"] = S_series[-1]
         
         if S_offline is not None:
             result.estimates_final["Offline"] = S_offline
         
         # PP法
-        errors_pp, est_pp = self.execute_pp(Y, Z, S_series, T_init, S_offline)
+        errors_pp, est_pp, errors_pp_by_var = self.execute_pp(Y, Z, S_series, T_init, S_offline)
         if errors_pp is not None:
             result.errors["pp"] = errors_pp
             result.estimates_final["PP"] = est_pp
+            for key, errs in errors_pp_by_var.items():
+                result.errors_by_variant[key]["pp"] = errs
 
         # PP-SGD法（q=1, r=1固定）
-        errors_ppsgd, est_ppsgd = self.execute_pp_sgd(Y, Z, S_series, T_init, S_offline)
+        errors_ppsgd, est_ppsgd, errors_ppsgd_by_var = self.execute_pp_sgd(
+            Y, Z, S_series, T_init, S_offline
+        )
         if errors_ppsgd is not None:
             result.errors["pp_sgd"] = errors_ppsgd
             result.estimates_final["PP-SGD"] = est_ppsgd
+            for key, errs in errors_ppsgd_by_var.items():
+                result.errors_by_variant[key]["pp_sgd"] = errs
         
         # PC法
-        errors_pc, est_pc = self.execute_pc(Y, Z, S_series, S_offline, T_init)
+        errors_pc, est_pc, errors_pc_by_var = self.execute_pc(Y, Z, S_series, S_offline, T_init)
         if errors_pc is not None:
             result.errors["pc"] = errors_pc
             result.estimates_final["PC"] = est_pc
+            for key, errs in errors_pc_by_var.items():
+                result.errors_by_variant[key]["pc"] = errs
         
         # CO法
-        errors_co, est_co = self.execute_co(Y, Z, S_series, S_offline, T_init)
+        errors_co, est_co, errors_co_by_var = self.execute_co(Y, Z, S_series, S_offline, T_init)
         if errors_co is not None:
             result.errors["co"] = errors_co
             result.estimates_final["CO"] = est_co
+            for key, errs in errors_co_by_var.items():
+                result.errors_by_variant[key]["co"] = errs
         
         # SGD法
-        errors_sgd, est_sgd = self.execute_sgd(Y, Z, S_series, S_offline, T_init)
+        errors_sgd, est_sgd, errors_sgd_by_var = self.execute_sgd(
+            Y, Z, S_series, S_offline, T_init
+        )
         if errors_sgd is not None:
             result.errors["sgd"] = errors_sgd
             result.estimates_final["SGD"] = est_sgd
+            for key, errs in errors_sgd_by_var.items():
+                result.errors_by_variant[key]["sgd"] = errs
         
         # PG法
-        errors_pg, est_pg = self.execute_pg(Y, Z, S_series, S_offline)
+        errors_pg, est_pg, errors_pg_by_var = self.execute_pg(Y, Z, S_series, S_offline)
         if errors_pg is not None:
             result.errors["pg"] = errors_pg
             result.estimates_final["PG"] = est_pg
+            for key, errs in errors_pg_by_var.items():
+                result.errors_by_variant[key]["pg"] = errs
 
         # 全手法で t=0 の誤差を同じ初期値（S0=0）に揃える
-        baseline0 = compute_normalized_error(
-            np.zeros((self.N, self.N)),
-            S_series[0],
-            S_offline,
-            normalization=self.error_normalization,
-            divide_by_n2=self.divide_by_n2,
-        )
-        for key in list(result.errors.keys()):
-            if result.errors[key]:
-                result.errors[key][0] = float(baseline0)
+        if result.errors_by_variant:
+            for variant in self.error_variants:
+                v_key = str(variant["key"])
+                baseline0 = compute_normalized_error(
+                    np.zeros((self.N, self.N)),
+                    S_series[0],
+                    S_offline,
+                    normalization=str(variant["normalization"]),
+                    divide_by_n2=bool(variant["divide_by_n2"]),
+                )
+                for key in list(result.errors_by_variant[v_key].keys()):
+                    if result.errors_by_variant[v_key][key]:
+                        result.errors_by_variant[v_key][key][0] = float(baseline0)
+            if self._primary_variant_key in result.errors_by_variant:
+                for key in list(result.errors.keys()):
+                    if result.errors[key]:
+                        result.errors[key][0] = float(
+                            result.errors_by_variant[self._primary_variant_key][key][0]
+                        )
+        else:
+            baseline0 = compute_normalized_error(
+                np.zeros((self.N, self.N)),
+                S_series[0],
+                S_offline,
+                normalization=self.error_normalization,
+                divide_by_n2=self.divide_by_n2,
+            )
+            for key in list(result.errors.keys()):
+                if result.errors[key]:
+                    result.errors[key][0] = float(baseline0)
         
         return result

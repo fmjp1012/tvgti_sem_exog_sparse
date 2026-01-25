@@ -25,7 +25,7 @@ TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
 .PHONY: help config real_config tune_piecewise tune_linear tune_real real run_piecewise run_linear run_real run_real_test piecewise linear \
         tune-piecewise tune-linear run-piecewise run-linear tune-and-run-piecewise tune-and-run-linear \
         bg_piecewise bg_linear bg_tune_piecewise bg_tune_linear bg_run_piecewise bg_run_linear bg_run_piecewise_hp \
-        bg_queue bg_status bg_stop
+        bg_queue bg_queue_status bg_status bg_stop
 
 help:
 	@echo "=========================================="
@@ -67,6 +67,8 @@ help:
 	@echo "  make bg_run_linear    # Linear: シミュレーションのみ (バックグラウンド)"
 	@echo "  make bg_queue QUEUE=\"piecewise run_linear\"  # 指定ターゲットを順次キュー実行 (バックグラウンド)"
 	@echo "  make bg_queue QUEUE=\"piecewise@cfgs/a.json piecewise@cfgs/b.json\"  # 同一ターゲットを別設定で順次実行"
+	@echo ""
+	@echo "  make bg_queue_status # キューの状態確認"
 	@echo ""
 	@echo "  make bg_status        # バックグラウンドジョブの状態確認"
 	@echo "  make bg_stop          # バックグラウンドジョブを停止"
@@ -229,6 +231,26 @@ bg_queue: $(LOG_DIR)
 		> "$$queue_log" 2>&1 & echo $$! > $(LOG_DIR)/queue.pid; \
 	echo "PID: $$(cat $(LOG_DIR)/queue.pid)"; \
 	echo "キューログ確認: tail -f $$queue_log"
+
+bg_queue_status:
+	@echo "=== キュー状態 ==="
+	@if [ -f "$(LOG_DIR)/queue.pid" ]; then \
+		pid=$$(cat "$(LOG_DIR)/queue.pid"); \
+		if ps -p "$$pid" > /dev/null 2>&1; then \
+			echo "queue.pid: PID $$pid (実行中)"; \
+		else \
+			echo "queue.pid: PID $$pid (終了済み)"; \
+		fi; \
+	else \
+		echo "queue.pid: なし"; \
+	fi
+	@latest=$$(ls -t $(LOG_DIR)/queue_*.log 2>/dev/null | head -1); \
+	if [ -n "$$latest" ]; then \
+		echo "最新キューログ: $$latest"; \
+		tail -n 50 "$$latest"; \
+	else \
+		echo "キューログがありません"; \
+	fi
 
 bg_status:
 	@echo "=== バックグラウンドジョブの状態 ==="

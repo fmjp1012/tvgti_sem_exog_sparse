@@ -1,0 +1,904 @@
+{
+  "created_at": "2026-01-25T21:32:22.562279",
+  "command": [
+    "/home/ito/tvgti_sem_exog_sparse/code/run_linear.py"
+  ],
+  "repro": {
+    "git": {
+      "head": "a97120281b701abf65d62cab7dba14efc77597f1",
+      "branch": "main",
+      "is_dirty": true
+    },
+    "hyperparam_json_content": null,
+    "environment": {
+      "python_version": "3.12.9 (main, Feb 22 2025, 01:19:18) [GCC 9.4.0]",
+      "python_executable": "/home/ito/.pyenv/versions/3.12.9/bin/python",
+      "python_implementation": "CPython",
+      "platform": "Linux-5.15.0-139-generic-x86_64-with-glibc2.31",
+      "platform_system": "Linux",
+      "platform_release": "5.15.0-139-generic",
+      "platform_version": "#149~20.04.1-Ubuntu SMP Wed Apr 16 08:29:56 UTC 2025",
+      "machine": "x86_64",
+      "processor": "x86_64",
+      "packages": {
+        "numpy": "2.3.5",
+        "scipy": "1.16.3",
+        "cvxpy": "1.7.4",
+        "optuna": "4.6.0",
+        "matplotlib": "3.10.7",
+        "joblib": "1.5.2",
+        "tqdm": "4.67.1",
+        "tqdm-joblib": "0.0.5",
+        "networkx": "3.6"
+      }
+    }
+  },
+  "scenario": "linear",
+  "config": {
+    "num_trials": 2,
+    "seed_base": 3,
+    "trial_seeds": [
+      3,
+      4
+    ],
+    "N": 5,
+    "T": 50,
+    "sparsity": 0.5,
+    "max_weight": 0.5,
+    "std_e": 0.05
+  },
+  "config_full": {
+    "use_test_config": true,
+    "config_name": "CONFIG_TEST",
+    "config": {
+      "methods": {
+        "pp": true,
+        "pp_sgd": false,
+        "pc": false,
+        "co": false,
+        "sgd": false,
+        "pg": false
+      },
+      "common": {
+        "N": 5,
+        "T": 50,
+        "sparsity": 0.5,
+        "max_weight": 0.5,
+        "std_e": 0.05,
+        "seed": 3
+      },
+      "piecewise": {
+        "K": 2
+      },
+      "linear": {},
+      "brownian": {
+        "K": 5,
+        "std_S": 0.05
+      },
+      "data_gen": {
+        "s_type": "random",
+        "t_min": 0.5,
+        "t_max": 1.0,
+        "z_dist": "uniform01"
+      },
+      "tuning": {
+        "tuning_trials": 3,
+        "tuning_runs_per_trial": 1,
+        "truncation_horizon": 30,
+        "tuning_seed": 4
+      },
+      "search_spaces": {
+        "pp": {
+          "r": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              10,
+              20,
+              30,
+              40,
+              50,
+              75,
+              100,
+              150,
+              200
+            ]
+          },
+          "q": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              1,
+              2,
+              3,
+              5,
+              8,
+              10
+            ]
+          },
+          "rho": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "mu_lambda": {
+            "low": 0.01,
+            "high": 2.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "lambda_S": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          }
+        },
+        "pp_sgd": {
+          "r": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              10,
+              20,
+              30,
+              40,
+              50,
+              75,
+              100,
+              150,
+              200
+            ]
+          },
+          "q": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              1,
+              2,
+              3,
+              5,
+              8,
+              10
+            ]
+          },
+          "rho": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "mu_lambda": {
+            "low": 0.0001,
+            "high": 1.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "lambda_S": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          }
+        },
+        "pc": {
+          "lambda_reg": {
+            "low": 1e-05,
+            "high": 0.01,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "alpha": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "beta_pc": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "gamma": {
+            "low": 0.85,
+            "high": 0.999,
+            "log": false,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "P": {
+            "low": 0,
+            "high": 2,
+            "log": false,
+            "type": "int",
+            "step": 1,
+            "choices": null
+          },
+          "C": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              1,
+              2,
+              5
+            ]
+          }
+        },
+        "co": {
+          "alpha": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "beta_co": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "gamma": {
+            "low": 0.85,
+            "high": 0.999,
+            "log": false,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "C": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              1,
+              2,
+              5
+            ]
+          }
+        },
+        "sgd": {
+          "alpha": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "beta_sgd": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          }
+        },
+        "pg": {
+          "lambda_reg": {
+            "low": 1e-05,
+            "high": 0.01,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "step_scale": {
+            "low": 1e-06,
+            "high": 0.1,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          },
+          "use_fista": {
+            "low": 0,
+            "high": 0,
+            "log": false,
+            "type": "categorical",
+            "step": null,
+            "choices": [
+              true,
+              false
+            ]
+          }
+        },
+        "offline": {
+          "offline_lambda_l1": {
+            "low": 0.0001,
+            "high": 1.0,
+            "log": true,
+            "type": "float",
+            "step": null,
+            "choices": null
+          }
+        }
+      },
+      "hyperparams": {
+        "pp": {
+          "r": 50,
+          "q": 5,
+          "rho": 0.001,
+          "mu_lambda": 0.05,
+          "lambda_S": 0.01
+        },
+        "pp_sgd": {
+          "r": 1,
+          "q": 1,
+          "rho": 0.001,
+          "mu_lambda": 0.05,
+          "lambda_S": 0.01
+        },
+        "pc": {
+          "lambda_reg": 0.001,
+          "alpha": 0.01,
+          "beta": 0.01,
+          "gamma": 0.9,
+          "P": 1,
+          "C": 1
+        },
+        "co": {
+          "beta_co": 0.02
+        },
+        "sgd": {
+          "beta_sgd": 0.0269
+        },
+        "pg": {
+          "lambda_reg": 0.001,
+          "step_scale": 1.0,
+          "step_size": null,
+          "use_fista": true,
+          "use_backtracking": false,
+          "max_iter": 500,
+          "tol": 0.0001
+        }
+      },
+      "run": {
+        "num_trials": 2
+      },
+      "metric": {
+        "error_normalization": "offline_solution",
+        "burn_in": 0,
+        "divide_by_n2": false
+      },
+      "comparison": {
+        "pc_model": "exog",
+        "pc_use_true_T_init": true,
+        "pc_T_init_identity_scale": 1.0,
+        "pp_init_b0": "ones",
+        "pp_lookahead": 0
+      },
+      "output": {
+        "result_root": "result",
+        "subdir_piecewise": "exog_sparse_piecewise",
+        "subdir_linear": "exog_sparse_linear",
+        "subdir_tuning": "exog_sparse_tuning",
+        "save_heatmap": true,
+        "save_sim_data": false
+      },
+      "skip_tuning": false,
+      "skip_simulation": false,
+      "hyperparam_json": null
+    }
+  },
+  "metric": {
+    "error_normalization": "offline_solution",
+    "offline_lambda_l1": 0.01,
+    "burn_in": 0,
+    "divide_by_n2": false,
+    "plot_variants": [
+      {
+        "key": "true_n2=0",
+        "normalization": "true_value",
+        "divide_by_n2": false
+      },
+      {
+        "key": "true_n2=1",
+        "normalization": "true_value",
+        "divide_by_n2": true
+      },
+      {
+        "key": "offline_n2=0",
+        "normalization": "offline_solution",
+        "divide_by_n2": false
+      },
+      {
+        "key": "offline_n2=1",
+        "normalization": "offline_solution",
+        "divide_by_n2": true
+      }
+    ]
+  },
+  "methods": {
+    "pp": {
+      "enabled": true,
+      "hyperparams": {
+        "r": 50,
+        "q": 5,
+        "rho": 0.001,
+        "mu_lambda": 0.05,
+        "lambda_S": 0.01
+      }
+    },
+    "pp_sgd": {
+      "enabled": false,
+      "hyperparams": {
+        "r": 1,
+        "q": 1,
+        "rho": 0.001,
+        "mu_lambda": 0.05,
+        "lambda_S": 0.01
+      }
+    },
+    "pc": {
+      "enabled": false,
+      "hyperparams": {
+        "lambda_reg": 0.001,
+        "alpha": 0.01,
+        "beta": 0.01,
+        "gamma": 0.9,
+        "P": 1,
+        "C": 1
+      }
+    },
+    "co": {
+      "enabled": false,
+      "hyperparams": {
+        "lambda_reg": 0.001,
+        "alpha": 0.01,
+        "beta_co": 0.02,
+        "gamma": 0.9,
+        "C": 1
+      }
+    },
+    "sgd": {
+      "enabled": false,
+      "hyperparams": {
+        "lambda_reg": 0.001,
+        "alpha": 0.01,
+        "beta_sgd": 0.0269,
+        "C": 1
+      }
+    },
+    "pg": {
+      "enabled": false,
+      "hyperparams": {
+        "lambda_reg": 0.001,
+        "step_scale": 1.0,
+        "step_size": null,
+        "use_fista": true,
+        "use_backtracking": false,
+        "max_iter": 500,
+        "tol": 0.0001
+      }
+    }
+  },
+  "generator": {
+    "function": "code.data_gen.generate_linear_X_with_exog",
+    "kwargs": {
+      "s_type": "random",
+      "t_min": 0.5,
+      "t_max": 1.0,
+      "z_dist": "uniform01"
+    }
+  },
+  "results": {
+    "figure": "linear_N=5_T=50_lambdaS=0.01_maxweight=0.5_mulambda=0.05_n2=0_norm=offline_num_trials=2_q=5_r=50_rho=0.001_seed=3_stde=0.05.png",
+    "figure_path": "result/260125/exog_sparse_linear/images/linear_N=5_T=50_lambdaS=0.01_maxweight=0.5_mulambda=0.05_n2=0_norm=offline_num_trials=2_q=5_r=50_rho=0.001_seed=3_stde=0.05.png",
+    "metrics": {
+      "pp": [
+        0.6036959484535376,
+        0.5880885710744053,
+        0.5722209239658822,
+        0.5561753684265466,
+        0.540043717063209,
+        0.5239262841291052,
+        0.5079305960761753,
+        0.4921697843774896,
+        0.4767607030804682,
+        0.4618218328645134,
+        0.44747104966712575,
+        0.4338233474275591,
+        0.4209886098024995,
+        0.40906952408859276,
+        0.39815972205845745,
+        0.3883422177760893,
+        0.37968819317428204,
+        0.3722561601855878,
+        0.36609150564569026,
+        0.36122640406635587,
+        0.3576800653954451,
+        0.35545927122207427,
+        0.3545591441346915,
+        0.35496409111463445,
+        0.3566488624826204,
+        0.35957967220293596,
+        0.3637153322942181,
+        0.3690083626580263,
+        0.3754060468520263,
+        0.38285141339229256,
+        0.39128413045352717,
+        0.4006413089366957,
+        0.41085821457095817,
+        0.4218688939515387,
+        0.4336067222512666,
+        0.44600488193037563,
+        0.4589967823072849,
+        0.4725164295657004,
+        0.4864987558844356,
+        0.5008799150951113,
+        0.5155975507839492,
+        0.5305910412116063,
+        0.5458017239515777,
+        0.5611731018333102,
+        0.5766510306811348,
+        0.5921838884980077,
+        0.6077227251643941,
+        0.6232213913992428,
+        0.6386366456390284,
+        0.6539282375990898
+      ],
+      "pp_sgd": null,
+      "pc": null,
+      "co": null,
+      "sgd": null,
+      "pg": null
+    },
+    "timings": {
+      "trial_sec": {
+        "3": {
+          "total_sec": 0.2874691169708967,
+          "data_gen_sec": 0.002405911684036255,
+          "save_data_sec": 1.6186386346817017e-06,
+          "offline_sec": 0.25687445513904095,
+          "methods_sec": 0.028187131509184837
+        },
+        "4": {
+          "total_sec": 0.25481228716671467,
+          "data_gen_sec": 0.009242700412869453,
+          "save_data_sec": 4.045665264129639e-06,
+          "offline_sec": 0.20347126200795174,
+          "methods_sec": 0.04209427908062935
+        }
+      },
+      "summary": {
+        "total_sec_sum": 0.5422814041376114,
+        "total_sec_mean": 0.2711407020688057,
+        "total_sec_median": 0.2711407020688057,
+        "total_sec_min": 0.25481228716671467,
+        "total_sec_max": 0.2874691169708967
+      }
+    },
+    "figures": [
+      {
+        "key": "true_n2=0",
+        "normalization": "true_value",
+        "divide_by_n2": false,
+        "figure": "linear_N=5_T=50_lambdaS=0.01_maxweight=0.5_mulambda=0.05_n2=0_norm=true_num_trials=2_q=5_r=50_rho=0.001_seed=3_stde=0.05.png",
+        "figure_path": "result/260125/exog_sparse_linear/images/linear_N=5_T=50_lambdaS=0.01_maxweight=0.5_mulambda=0.05_n2=0_norm=true_num_trials=2_q=5_r=50_rho=0.001_seed=3_stde=0.05.png"
+      },
+      {
+        "key": "true_n2=1",
+        "normalization": "true_value",
+        "divide_by_n2": true,
+        "figure": "linear_N=5_T=50_lambdaS=0.01_maxweight=0.5_mulambda=0.05_n2=1_norm=true_num_trials=2_q=5_r=50_rho=0.001_seed=3_stde=0.05.png",
+        "figure_path": "result/260125/exog_sparse_linear/images/linear_N=5_T=50_lambdaS=0.01_maxweight=0.5_mulambda=0.05_n2=1_norm=true_num_trials=2_q=5_r=50_rho=0.001_seed=3_stde=0.05.png"
+      },
+      {
+        "key": "offline_n2=0",
+        "normalization": "offline_solution",
+        "divide_by_n2": false,
+        "figure": "linear_N=5_T=50_lambdaS=0.01_maxweight=0.5_mulambda=0.05_n2=0_norm=offline_num_trials=2_q=5_r=50_rho=0.001_seed=3_stde=0.05.png",
+        "figure_path": "result/260125/exog_sparse_linear/images/linear_N=5_T=50_lambdaS=0.01_maxweight=0.5_mulambda=0.05_n2=0_norm=offline_num_trials=2_q=5_r=50_rho=0.001_seed=3_stde=0.05.png"
+      },
+      {
+        "key": "offline_n2=1",
+        "normalization": "offline_solution",
+        "divide_by_n2": true,
+        "figure": "linear_N=5_T=50_lambdaS=0.01_maxweight=0.5_mulambda=0.05_n2=1_norm=offline_num_trials=2_q=5_r=50_rho=0.001_seed=3_stde=0.05.png",
+        "figure_path": "result/260125/exog_sparse_linear/images/linear_N=5_T=50_lambdaS=0.01_maxweight=0.5_mulambda=0.05_n2=1_norm=offline_num_trials=2_q=5_r=50_rho=0.001_seed=3_stde=0.05.png"
+      }
+    ],
+    "metrics_by_variant": {
+      "true_n2=0": {
+        "pp": [
+          0.9999999999981184,
+          0.9999999999980564,
+          0.999999999997994,
+          0.9999999999979312,
+          0.9999999999978685,
+          0.999999999997806,
+          0.9999999999977438,
+          0.9999999999976824,
+          0.999999999997622,
+          0.9999999999975631,
+          0.9999999999975056,
+          0.9999999999974503,
+          0.9999999999973973,
+          0.9999999999973472,
+          0.9999999999973004,
+          0.9999999999972573,
+          0.9999999999972187,
+          0.9999999999971849,
+          0.9999999999971569,
+          0.9999999999971354,
+          0.9999999999971209,
+          0.9999999999971142,
+          0.9999999999971159,
+          0.9999999999971265,
+          0.9999999999971463,
+          0.9999999999971754,
+          0.9999999999972136,
+          0.9999999999972604,
+          0.9999999999973155,
+          0.9999999999973778,
+          0.9999999999974463,
+          0.99999999999752,
+          0.9999999999975977,
+          0.9999999999976783,
+          0.9999999999977607,
+          0.999999999997844,
+          0.9999999999979271,
+          0.9999999999980095,
+          0.9999999999980904,
+          0.9999999999981695,
+          0.9999999999982463,
+          0.9999999999983205,
+          0.999999999998392,
+          0.9999999999984605,
+          0.9999999999985261,
+          0.9999999999985887,
+          0.9999999999986483,
+          0.999999999998705,
+          0.9999999999987591,
+          0.9999999999988104
+        ],
+        "pp_sgd": null,
+        "pc": null,
+        "co": null,
+        "sgd": null,
+        "pg": null
+      },
+      "true_n2=1": {
+        "pp": [
+          0.039999999999924735,
+          0.03999999999992226,
+          0.03999999999991976,
+          0.039999999999917255,
+          0.03999999999991474,
+          0.03999999999991223,
+          0.03999999999990975,
+          0.03999999999990729,
+          0.039999999999904876,
+          0.039999999999902516,
+          0.039999999999900226,
+          0.039999999999898006,
+          0.0399999999998959,
+          0.03999999999989389,
+          0.03999999999989201,
+          0.03999999999989029,
+          0.03999999999988875,
+          0.0399999999998874,
+          0.03999999999988628,
+          0.03999999999988542,
+          0.039999999999884836,
+          0.03999999999988457,
+          0.039999999999884635,
+          0.03999999999988506,
+          0.03999999999988585,
+          0.039999999999887015,
+          0.03999999999988854,
+          0.039999999999890415,
+          0.03999999999989262,
+          0.039999999999895106,
+          0.03999999999989785,
+          0.0399999999999008,
+          0.039999999999903904,
+          0.03999999999990713,
+          0.03999999999991043,
+          0.03999999999991376,
+          0.03999999999991709,
+          0.03999999999992038,
+          0.03999999999992362,
+          0.039999999999926775,
+          0.039999999999929856,
+          0.03999999999993282,
+          0.03999999999993568,
+          0.03999999999993842,
+          0.03999999999994104,
+          0.039999999999943546,
+          0.03999999999994593,
+          0.0399999999999482,
+          0.03999999999995037,
+          0.03999999999995242
+        ],
+        "pp_sgd": null,
+        "pc": null,
+        "co": null,
+        "sgd": null,
+        "pg": null
+      },
+      "offline_n2=0": {
+        "pp": [
+          0.6036959484535376,
+          0.5880885710744053,
+          0.5722209239658822,
+          0.5561753684265466,
+          0.540043717063209,
+          0.5239262841291052,
+          0.5079305960761753,
+          0.4921697843774896,
+          0.4767607030804682,
+          0.4618218328645134,
+          0.44747104966712575,
+          0.4338233474275591,
+          0.4209886098024995,
+          0.40906952408859276,
+          0.39815972205845745,
+          0.3883422177760893,
+          0.37968819317428204,
+          0.3722561601855878,
+          0.36609150564569026,
+          0.36122640406635587,
+          0.3576800653954451,
+          0.35545927122207427,
+          0.3545591441346915,
+          0.35496409111463445,
+          0.3566488624826204,
+          0.35957967220293596,
+          0.3637153322942181,
+          0.3690083626580263,
+          0.3754060468520263,
+          0.38285141339229256,
+          0.39128413045352717,
+          0.4006413089366957,
+          0.41085821457095817,
+          0.4218688939515387,
+          0.4336067222512666,
+          0.44600488193037563,
+          0.4589967823072849,
+          0.4725164295657004,
+          0.4864987558844356,
+          0.5008799150951113,
+          0.5155975507839492,
+          0.5305910412116063,
+          0.5458017239515777,
+          0.5611731018333102,
+          0.5766510306811348,
+          0.5921838884980077,
+          0.6077227251643941,
+          0.6232213913992428,
+          0.6386366456390284,
+          0.6539282375990898
+        ],
+        "pp_sgd": null,
+        "pc": null,
+        "co": null,
+        "sgd": null,
+        "pg": null
+      },
+      "offline_n2=1": {
+        "pp": [
+          0.024147837938141507,
+          0.023523542842976208,
+          0.022888836958635285,
+          0.022247014737061865,
+          0.021601748682528357,
+          0.02095705136516421,
+          0.020317223843047013,
+          0.019686791375099582,
+          0.019070428123218727,
+          0.018472873314580536,
+          0.01789884198668503,
+          0.017352933897102362,
+          0.016839544392099982,
+          0.01636278096354371,
+          0.0159263888823383,
+          0.015533688711043572,
+          0.015187527726971283,
+          0.014890246407423511,
+          0.01464366022582761,
+          0.014449056162654232,
+          0.014307202615817805,
+          0.014218370848882972,
+          0.014182365765387658,
+          0.014198563644585379,
+          0.014265954499304815,
+          0.01438318688811744,
+          0.014548613291768726,
+          0.014760334506321051,
+          0.01501624187408105,
+          0.015314056535691704,
+          0.015651365218141085,
+          0.016025652357467828,
+          0.016434328582838328,
+          0.01687475575806155,
+          0.017344268890050665,
+          0.017840195277215025,
+          0.018359871292291396,
+          0.018900657182628018,
+          0.019459950235377423,
+          0.020035196603804453,
+          0.020623902031357964,
+          0.02122364164846425,
+          0.021832068958063104,
+          0.02244692407333241,
+          0.02306604122724539,
+          0.02368735553992031,
+          0.024308909006575764,
+          0.024928855655969716,
+          0.025545465825561137,
+          0.026157129503963594
+        ],
+        "pp_sgd": null,
+        "pc": null,
+        "co": null,
+        "sgd": null,
+        "pg": null
+      }
+    }
+  },
+  "data": {
+    "saved": false,
+    "dir": null,
+    "files": {},
+    "format": "npz",
+    "contents": [
+      "S_series",
+      "T_mat",
+      "Z",
+      "Y",
+      "rng_state_json",
+      "trial_seed"
+    ]
+  },
+  "snapshots": {
+    "run_linear": "result/260125/exog_sparse_linear/images/scripts/run_linear.py",
+    "config": "result/260125/exog_sparse_linear/images/scripts/config.py",
+    "data_gen": "result/260125/exog_sparse_linear/images/scripts/data_gen.py"
+  },
+  "hyperparam_json": null,
+  "result_dir": "result/260125/exog_sparse_linear/images"
+}

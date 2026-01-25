@@ -10,6 +10,7 @@ import argparse
 import json
 import subprocess
 import sys
+import time
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
 from datetime import datetime
@@ -34,16 +35,18 @@ from utils.formatting import fmt_value, print_block
 from utils.io.plotting import apply_style, plot_heatmaps
 from utils.io.results import backup_script, create_result_dir, make_result_filename, save_json
 from utils.offline_solver import solve_offline_sem_lasso_batch
-from utils.repro import collect_environment_info, to_jsonable
+from utils.repro import collect_environment_info
 
 
 @dataclass
 class ExperimentResult:
     """実験結果"""
     error_means: Dict[str, Optional[np.ndarray]] = field(default_factory=dict)
+    error_means_by_variant: Dict[str, Dict[str, Optional[np.ndarray]]] = field(default_factory=dict)
     last_estimates: Optional[Dict[str, np.ndarray]] = None
     result_dir: Optional[Path] = None
     figure_path: Optional[Path] = None
+    figure_paths: List[Path] = field(default_factory=list)
 
 
 def parse_hyperparam_arg() -> Optional[Path]:
@@ -107,8 +110,24 @@ class BaseExperimentRunner(ABC):
         self.error_normalization = self.cfg.metric.error_normalization
         self.burn_in_cfg = int(getattr(self.cfg.metric, "burn_in", 0))
         self.divide_by_n2 = bool(getattr(self.cfg.metric, "divide_by_n2", False))
-        self.save_sim_data = bool(getattr(self.cfg.output, "save_sim_data", False))
-        self.data_dir: Optional[Path] = None
+        self.plot_variants = self._init_plot_variants()
+        self.primary_variant_key = self._variant_key(self.error_normalization, self.divide_by_n2)
+
+    @staticmethod
+    def _variant_key(normalization: str, divide_by_n2: bool) -> str:
+        norm_tag = "true" if normalization == "true_value" else "offline"
+        return f"{norm_tag}_n2={int(bool(divide_by_n2))}"
+
+    def _init_plot_variants(self) -> List[Dict[str, object]]:
+        variants = [
+            {"normalization": "true_value", "divide_by_n2": False},
+            {"normalization": "true_value", "divide_by_n2": True},
+            {"normalization": "offline_solution", "divide_by_n2": False},
+            {"normalization": "offline_solution", "divide_by_n2": True},
+        ]
+        for v in variants:
+            v["key"] = self._variant_key(str(v["normalization"]), bool(v["divide_by_n2"]))
+        return variants
 
     @abstractmethod
     def get_scenario_name(self) -> str:
@@ -207,31 +226,6 @@ class BaseExperimentRunner(ABC):
         })
         print("------------------------------")
 
-    def _save_trial_data(
-        self,
-        trial_seed: int,
-        rng_state: Dict[str, Any],
-        S_series: List[np.ndarray],
-        T_mat: np.ndarray,
-        Z: np.ndarray,
-        Y: np.ndarray,
-    ) -> Optional[str]:
-        if not self.save_sim_data or self.data_dir is None:
-            return None
-        data_path = self.data_dir / f"trial_seed={trial_seed}.npz"
-        S_series_arr = np.asarray(S_series)
-        rng_state_json = json.dumps(to_jsonable(rng_state), ensure_ascii=False)
-        np.savez_compressed(
-            data_path,
-            S_series=S_series_arr,
-            T_mat=T_mat,
-            Z=Z,
-            Y=Y,
-            rng_state_json=np.array(rng_state_json),
-            trial_seed=np.array(trial_seed),
-        )
-        return str(data_path)
-
     def run_trial(self, trial_seed: int) -> TrialResult:
         """
         単一の試行を実行する。
@@ -246,17 +240,18 @@ class BaseExperimentRunner(ABC):
         TrialResult
             試行結果
         """
+        t0 = time.perf_counter()
         rng = np.random.default_rng(trial_seed)
-        rng_state = rng.bit_generator.state
         S_series, T_mat, Z, Y = self.generate_data(rng)
-        data_path = self._save_trial_data(trial_seed, rng_state, S_series, T_mat, Z, Y)
+        t1 = time.perf_counter()
         
         # オフライン解を計算（必要な場合）
         S_offline = None
-        if self.error_normalization == "offline_solution":
+        if any(v["normalization"] == "offline_solution" for v in self.plot_variants):
             S_offline = solve_offline_sem_lasso_batch(
                 Y, Z, self.hyperparams.offline_lambda_l1
             )
+        t2 = time.perf_counter()
         
         # 手法実行
         executor = MethodExecutor(
@@ -266,16 +261,23 @@ class BaseExperimentRunner(ABC):
             error_normalization=self.error_normalization,
             comparison=getattr(self.cfg, "comparison", None),
             divide_by_n2=bool(getattr(self.cfg.metric, "divide_by_n2", False)),
+            error_variants=self.plot_variants,
         )
         
         result = executor.execute_all(Y, Z, S_series, T_mat, S_offline)
+        t3 = time.perf_counter()
         result.trial_seed = trial_seed
-        result.data_path = data_path
+        result.timing = {
+            "total_sec": t3 - t0,
+            "data_gen_sec": t1 - t0,
+            "offline_sec": t2 - t1,
+            "methods_sec": t3 - t2,
+        }
         return result
 
     def aggregate_results(
         self, results: List[TrialResult]
-    ) -> Tuple[Dict[str, Optional[np.ndarray]], Optional[Dict[str, np.ndarray]]]:
+    ) -> Tuple[Dict[str, Dict[str, Optional[np.ndarray]]], Dict[str, Optional[np.ndarray]], Optional[Dict[str, np.ndarray]]]:
         """
         複数試行の結果を集計する。
 
@@ -286,41 +288,58 @@ class BaseExperimentRunner(ABC):
 
         Returns
         -------
-        Tuple[error_means, last_estimates]
-            - error_means: 各手法の平均誤差
+        Tuple[error_means_by_variant, error_means, last_estimates]
+            - error_means_by_variant: 各バリアント×手法の平均誤差
+            - error_means: 設定上のプライマリ指標の平均誤差
             - last_estimates: 最後の試行の最終推定値
         """
         methods = ["pp", "pp_sgd", "pc", "co", "sgd", "pg"]
-        error_totals: Dict[str, Optional[np.ndarray]] = {}
-        
-        # 初期化
-        for method in methods:
-            flag = getattr(self.flags, method)
-            if flag:
-                error_totals[method] = np.zeros(self.T)
-            else:
-                error_totals[method] = None
+        error_totals_by_variant: Dict[str, Dict[str, Optional[np.ndarray]]] = {}
+        for variant in self.plot_variants:
+            v_key = str(variant["key"])
+            error_totals_by_variant[v_key] = {}
+            for method in methods:
+                flag = getattr(self.flags, method)
+                error_totals_by_variant[v_key][method] = np.zeros(self.T) if flag else None
         
         # 集計
         last_estimates = None
         for result in results:
-            for method in methods:
-                if error_totals[method] is not None and method in result.errors:
-                    error_totals[method] += np.array(result.errors[method])
+            for variant in self.plot_variants:
+                v_key = str(variant["key"])
+                for method in methods:
+                    if (
+                        error_totals_by_variant[v_key][method] is not None
+                        and method in result.errors_by_variant.get(v_key, {})
+                    ):
+                        error_totals_by_variant[v_key][method] += np.array(
+                            result.errors_by_variant[v_key][method]
+                        )
             last_estimates = result.estimates_final
         
         # 平均を計算
-        error_means: Dict[str, Optional[np.ndarray]] = {}
-        for method in methods:
-            if error_totals[method] is not None:
-                error_means[method] = error_totals[method] / self.num_trials
-            else:
-                error_means[method] = None
+        error_means_by_variant: Dict[str, Dict[str, Optional[np.ndarray]]] = {}
+        for variant in self.plot_variants:
+            v_key = str(variant["key"])
+            error_means_by_variant[v_key] = {}
+            for method in methods:
+                if error_totals_by_variant[v_key][method] is not None:
+                    error_means_by_variant[v_key][method] = (
+                        error_totals_by_variant[v_key][method] / self.num_trials
+                    )
+                else:
+                    error_means_by_variant[v_key][method] = None
+
+        error_means = error_means_by_variant.get(self.primary_variant_key, {})
         
-        return error_means, last_estimates
+        return error_means_by_variant, error_means, last_estimates
 
     def plot_results(
-        self, error_means: Dict[str, Optional[np.ndarray]], save_path: Path
+        self,
+        error_means: Dict[str, Optional[np.ndarray]],
+        save_path: Path,
+        normalization: str,
+        divide_by_n2: bool,
     ) -> None:
         """
         結果をプロットする。
@@ -331,16 +350,11 @@ class BaseExperimentRunner(ABC):
             各手法の平均誤差
         save_path : Path
             保存先パス
+        normalization : str
+            正規化方法
+        divide_by_n2 : bool
+            N^2 で割るかどうか
         """
-        burn_in = self.burn_in_cfg
-        if burn_in == -1:
-            # 自動burn-inは PP の r,q から算出
-            burn_in = int(getattr(self.hyperparams.pp, "r", 0)) + int(getattr(self.hyperparams.pp, "q", 0)) - 2
-        burn_in = max(0, int(burn_in))
-
-        # ---------------------------------------------------------
-        # Plot 1: Standard Metric (as configured)
-        # ---------------------------------------------------------
         plt.figure(figsize=(10, 6))
         
         # プロット順序と色を定義
@@ -356,102 +370,23 @@ class BaseExperimentRunner(ABC):
         for method, color, label in plot_order:
             if error_means.get(method) is not None:
                 plt.plot(error_means[method], color=color, label=label)
-
-        # burn_in の縦線表示は不要（見た目のノイズになるので省略）
         
         plt.yscale("log")
         plt.xlim(left=0, right=self.T)
         plt.xlabel("t")
         
-        if self.error_normalization == "offline_solution":
+        if normalization == "offline_solution":
             ylabel = "Average Error Ratio (vs Offline)"
         else:
             ylabel = "Average NSE"
-        if self.divide_by_n2:
+        if divide_by_n2:
             ylabel = ylabel + " / $N^2$"
         plt.ylabel(ylabel)
         
         plt.grid(True, which="both")
         plt.legend()
-        # plt.title(f"{ylabel} (N={self.N}, T={self.T})")
         plt.savefig(str(save_path))
         plt.close() # Close to avoid memory leaks
-
-        # ---------------------------------------------------------
-        # Plot 2: Normalized by N^2 (explicitly if not already done)
-        # ---------------------------------------------------------
-        # If divide_by_n2 was False, we might want to see the version divided by N^2.
-        # If divide_by_n2 was True, we might want to see the raw version?
-        # Requirement: "可能なら同一条件で「NSE」「NSE/(ノード数^2)」を併記して比較しやすくする"
-        # So I will forcefully produce the "other" one or both systematically.
-        
-        # Let's produce the complementary plot.
-        # If current is raw, produce normalized.
-        # If current is normalized, produce raw.
-        
-        is_currently_divided = self.divide_by_n2
-        
-        # Create a helper to plot
-        def plot_metric(divide: bool, suffix: str):
-            plt.figure(figsize=(10, 6))
-            for method, color, label in plot_order:
-                if error_means.get(method) is not None:
-                    data = error_means[method].copy()
-                    if divide and not is_currently_divided:
-                        data /= (self.N**2)
-                    elif not divide and is_currently_divided:
-                        data *= (self.N**2)
-                    plt.plot(data, color=color, label=label)
-            
-            plt.yscale("log")
-            plt.xlim(left=0, right=self.T)
-            plt.xlabel("t")
-            
-            if self.error_normalization == "offline_solution":
-                base_label = "Average Error Ratio (vs Offline)"
-            else:
-                base_label = "Average NSE"
-            
-            y_lab = base_label + " / $N^2$" if divide else base_label
-            plt.ylabel(y_lab)
-            plt.grid(True, which="both")
-            plt.legend()
-            # plt.title(f"{y_lab} (N={self.N}, T={self.T})")
-            
-            p = save_path.with_name(f"{save_path.stem}{suffix}{save_path.suffix}")
-            plt.savefig(str(p))
-            plt.close()
-
-        # Generate the "other" plot
-        if self.divide_by_n2:
-            # Current is divided, generate raw
-            plot_metric(divide=False, suffix="_raw")
-        else:
-            # Current is raw, generate divided
-            plot_metric(divide=True, suffix="_divN2")
-
-
-        # burn-in 以降だけを見せる図も保存（提案法の“立ち上がり”問題を切り分ける）
-        if burn_in > 0:
-            plt.figure(figsize=(10, 6))
-            for method, color, label in plot_order:
-                if error_means.get(method) is not None:
-                    plt.plot(np.arange(burn_in, self.T), error_means[method][burn_in:], color=color, label=label)
-            plt.yscale("log")
-            plt.xlim(left=burn_in, right=self.T)
-            plt.xlabel("t")
-            if self.error_normalization == "offline_solution":
-                ylabel_b = "Average Error Ratio (vs Offline)"
-            else:
-                ylabel_b = "Average NSE"
-            if self.divide_by_n2:
-                ylabel_b = ylabel_b + " / N^2"
-            plt.ylabel(ylabel_b)
-            plt.grid(True, which="both")
-            plt.legend()
-            save_path_burn = save_path.with_name(f"{save_path.stem}_burnin{burn_in}{save_path.suffix}")
-            plt.savefig(str(save_path_burn))
-            plt.show()
 
     def save_metadata(
         self,
@@ -459,7 +394,9 @@ class BaseExperimentRunner(ABC):
         filename: str,
         error_means: Dict[str, Optional[np.ndarray]],
         trial_seeds: List[int],
-        data_index: Optional[Dict[str, str]] = None,
+        error_means_by_variant: Optional[Dict[str, Dict[str, Optional[np.ndarray]]]] = None,
+        figure_records: Optional[List[Dict[str, str]]] = None,
+        trial_timings: Optional[Dict[str, Dict[str, float]]] = None,
     ) -> None:
         """
         メタデータを保存する。
@@ -474,6 +411,10 @@ class BaseExperimentRunner(ABC):
             各手法の平均誤差
         trial_seeds : List[int]
             試行シードのリスト
+        error_means_by_variant : Dict[str, Dict[str, Optional[np.ndarray]]], optional
+            各バリアント×手法の平均誤差
+        figure_records : List[Dict[str, str]], optional
+            保存した図の情報
         """
         run_started_at = datetime.now()
         
@@ -545,6 +486,22 @@ class BaseExperimentRunner(ABC):
         hp_dict = hyperparams_to_dict(self.hyperparams)
         
         # メタデータ構築
+        if error_means_by_variant is None:
+            error_means_by_variant = {self.primary_variant_key: error_means}
+        if figure_records is None:
+            figure_records = []
+
+        timing_summary: Dict[str, Optional[float]] = {}
+        if trial_timings:
+            totals = [v.get("total_sec", 0.0) for v in trial_timings.values()]
+            timing_summary = {
+                "total_sec_sum": float(np.sum(totals)) if totals else None,
+                "total_sec_mean": float(np.mean(totals)) if totals else None,
+                "total_sec_median": float(np.median(totals)) if totals else None,
+                "total_sec_min": float(np.min(totals)) if totals else None,
+                "total_sec_max": float(np.max(totals)) if totals else None,
+            }
+
         metadata = {
             "created_at": run_started_at.isoformat(),
             "command": sys.argv,
@@ -572,6 +529,14 @@ class BaseExperimentRunner(ABC):
                 "offline_lambda_l1": self.hyperparams.offline_lambda_l1,
                 "burn_in": self.burn_in_cfg,
                 "divide_by_n2": bool(getattr(self.cfg.metric, "divide_by_n2", False)),
+                "plot_variants": [
+                    {
+                        "key": v["key"],
+                        "normalization": v["normalization"],
+                        "divide_by_n2": v["divide_by_n2"],
+                    }
+                    for v in self.plot_variants
+                ],
             },
             "methods": {
                 "pp": {
@@ -615,20 +580,27 @@ class BaseExperimentRunner(ABC):
                     method: err.tolist() if err is not None else None
                     for method, err in error_means.items()
                 },
-            },
-            "data": {
-                "saved": bool(self.save_sim_data),
-                "dir": str(self.data_dir) if self.data_dir is not None else None,
-                "files": data_index or {},
-                "format": "npz",
-                "contents": [
-                    "S_series",
-                    "T_mat",
-                    "Z",
-                    "Y",
-                    "rng_state_json",
-                    "trial_seed",
+                "timings": {
+                    "trial_sec": trial_timings or {},
+                    "summary": timing_summary,
+                },
+                "figures": [
+                    {
+                        "key": v["key"],
+                        "normalization": v["normalization"],
+                        "divide_by_n2": v["divide_by_n2"],
+                        "figure": record["figure"],
+                        "figure_path": record["figure_path"],
+                    }
+                    for v, record in zip(self.plot_variants, figure_records)
                 ],
+                "metrics_by_variant": {
+                    v["key"]: {
+                        method: err.tolist() if err is not None else None
+                        for method, err in error_means_by_variant[v["key"]].items()
+                    }
+                    for v in self.plot_variants
+                },
             },
             "snapshots": script_copies,
             "hyperparam_json": str(self.hyperparam_path) if self.hyperparam_path else None,
@@ -660,11 +632,6 @@ class BaseExperimentRunner(ABC):
             extra_tag="images",
         )
         self.result_dir = Path(result_dir)
-        if self.save_sim_data:
-            self.data_dir = self.result_dir / "data"
-            self.data_dir.mkdir(parents=True, exist_ok=True)
-        else:
-            self.data_dir = None
         
         # 試行シード生成
         trial_seeds = [self.seed + i for i in range(self.num_trials)]
@@ -676,13 +643,12 @@ class BaseExperimentRunner(ABC):
             )
         
         # 結果集計
-        error_means, last_estimates = self.aggregate_results(results)
+        error_means_by_variant, error_means, last_estimates = self.aggregate_results(results)
 
-        data_index: Dict[str, str] = {}
-        if self.save_sim_data:
-            for result in results:
-                if result.trial_seed is not None and result.data_path is not None:
-                    data_index[str(result.trial_seed)] = result.data_path
+        trial_timings: Dict[str, Dict[str, float]] = {}
+        for result in results:
+            if result.trial_seed is not None and result.timing:
+                trial_timings[str(result.trial_seed)] = result.timing
         
         # ファイル名生成
         filename_params = {
@@ -699,16 +665,37 @@ class BaseExperimentRunner(ABC):
             "lambdaS": self.hyperparams.pp.lambda_S,
             **self.get_scenario_params(),
         }
-        filename = make_result_filename(
-            prefix=self.get_scenario_name(),
-            params=filename_params,
-            suffix=".png",
-        )
-        print(filename)
-        
-        # プロット保存
+        figure_records: List[Dict[str, str]] = []
+        figure_paths: List[Path] = []
+        filename_primary = None
+        for variant in self.plot_variants:
+            variant_params = {
+                **filename_params,
+                "norm": "true" if variant["normalization"] == "true_value" else "offline",
+                "n2": int(bool(variant["divide_by_n2"])),
+            }
+            filename = make_result_filename(
+                prefix=self.get_scenario_name(),
+                params=variant_params,
+                suffix=".png",
+            )
+            if variant["key"] == self.primary_variant_key:
+                filename_primary = filename
+            print(filename)
+            figure_path = Path(result_dir) / filename
+            self.plot_results(
+                error_means_by_variant[variant["key"]],
+                figure_path,
+                str(variant["normalization"]),
+                bool(variant["divide_by_n2"]),
+            )
+            figure_paths.append(figure_path)
+            figure_records.append({
+                "figure": filename,
+                "figure_path": str(figure_path),
+            })
+        filename = filename_primary or figure_records[0]["figure"]
         figure_path = Path(result_dir) / filename
-        self.plot_results(error_means, figure_path)
         
         # ヒートマップ表示
         cfg = get_config()
@@ -722,11 +709,21 @@ class BaseExperimentRunner(ABC):
             )
         
         # メタデータ保存
-        self.save_metadata(result_dir, filename, error_means, trial_seeds, data_index=data_index)
+        self.save_metadata(
+            result_dir,
+            filename,
+            error_means,
+            trial_seeds,
+            error_means_by_variant=error_means_by_variant,
+            figure_records=figure_records,
+            trial_timings=trial_timings,
+        )
         
         return ExperimentResult(
             error_means=error_means,
+            error_means_by_variant=error_means_by_variant,
             last_estimates=last_estimates,
             result_dir=Path(result_dir),
             figure_path=figure_path,
+            figure_paths=figure_paths,
         )

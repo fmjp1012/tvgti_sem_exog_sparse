@@ -36,7 +36,7 @@ from utils.io.results import backup_script, create_result_dir, make_result_filen
 from utils.offline_solver import solve_offline_sem_lasso_batch
 from utils.metrics import compute_error_series
 from utils.metrics import compute_normalized_error
-from utils.repro import collect_environment_info, to_jsonable
+from utils.repro import collect_environment_info
 
 
 def _get_git_info(repo_root: Path) -> Dict[str, object]:
@@ -302,10 +302,25 @@ def main() -> None:
     error_normalization = cfg.metric.error_normalization
     burn_in_cfg = int(getattr(cfg.metric, "burn_in", 0))
     divide_by_n2 = bool(getattr(cfg.metric, "divide_by_n2", False))
-    
+
+    def _variant_key(normalization: str, div_n2: bool) -> str:
+        norm_tag = "true" if normalization == "true_value" else "offline"
+        return f"{norm_tag}_n2={int(div_n2)}"
+
+    plot_variants = [
+        {"normalization": "true_value", "divide_by_n2": False},
+        {"normalization": "true_value", "divide_by_n2": True},
+        {"normalization": "offline_solution", "divide_by_n2": False},
+        {"normalization": "offline_solution", "divide_by_n2": True},
+    ]
+    for variant in plot_variants:
+        variant["key"] = _variant_key(variant["normalization"], variant["divide_by_n2"])
+
+    primary_variant_key = _variant_key(error_normalization, divide_by_n2)
+
     # offline_lambda_l1 の取得（ハイパラJSONから読み込むか、探索範囲の幾何平均を使用）
     offline_lambda_l1 = None
-    if error_normalization == "offline_solution":
+    if any(v["normalization"] == "offline_solution" for v in plot_variants):
         if hyperparams.get("offline_lambda_l1") is not None:
             offline_lambda_l1 = float(hyperparams["offline_lambda_l1"])
         else:
@@ -329,37 +344,8 @@ def main() -> None:
     pp_lookahead = (int(r) + int(q) - 2) if pp_lookahead_cfg == -1 else max(0, int(pp_lookahead_cfg))
     pp_sgd_lookahead = (int(r_pp_sgd) + int(q_pp_sgd) - 2) if pp_lookahead_cfg == -1 else max(0, int(pp_lookahead_cfg))
 
-    # 結果ディレクトリ作成（trialデータ保存のため早めに作成）
+    # 結果ディレクトリ作成
     result_dir = create_result_dir(cfg.output.result_root, cfg.output.subdir_piecewise, extra_tag='images')
-    save_sim_data = bool(getattr(cfg.output, "save_sim_data", False))
-    data_dir: Optional[Path] = None
-    if save_sim_data:
-        data_dir = Path(result_dir) / "data"
-        data_dir.mkdir(parents=True, exist_ok=True)
-
-    def _save_trial_data(
-        trial_seed: int,
-        rng_state: Dict[str, Any],
-        S_series: list[np.ndarray],
-        T_mat: np.ndarray,
-        Z: np.ndarray,
-        Y: np.ndarray,
-    ) -> Optional[str]:
-        if not save_sim_data or data_dir is None:
-            return None
-        data_path = Path(data_dir) / f"trial_seed={trial_seed}.npz"
-        S_series_arr = np.asarray(S_series)
-        rng_state_json = json.dumps(to_jsonable(rng_state), ensure_ascii=False)
-        np.savez_compressed(
-            data_path,
-            S_series=S_series_arr,
-            T_mat=T_mat,
-            Z=Z,
-            Y=Y,
-            rng_state_json=np.array(rng_state_json),
-            trial_seed=np.array(trial_seed),
-        )
-        return str(data_path)
 
     def _pc_T_init(T_true: np.ndarray) -> np.ndarray:
         return T_true if pc_use_true_T else (np.eye(N) * pc_T_scale)
@@ -371,7 +357,6 @@ def main() -> None:
     
     def run_trial(trial_seed: int):
         rng = np.random.default_rng(trial_seed)
-        rng_state = rng.bit_generator.state
         S_series, B_true, U, Y = generate_piecewise_X_with_exog(
             N=N,
             T=T,
@@ -385,15 +370,14 @@ def main() -> None:
             z_dist=cfg.data_gen.z_dist,
             rng=rng,
         )
-        data_path = _save_trial_data(trial_seed, rng_state, S_series, B_true, U, Y)
-        errors = {}
+        errors = {v["key"]: {} for v in plot_variants}
         estimates_final = {"True": S_series[-1]}
         
         # オフライン解を計算（必要な場合）
         S_offline = None
-        if error_normalization == "offline_solution":
+        if any(v["normalization"] == "offline_solution" for v in plot_variants):
             S_offline = solve_offline_sem_lasso_batch(Y, U, offline_lambda_l1)
-            estimates_final['Offline'] = S_offline
+            estimates_final["Offline"] = S_offline
         
         if run_pp_flag:
             S0 = np.zeros((N, N))
@@ -404,8 +388,14 @@ def main() -> None:
                 lookahead=pp_lookahead,
             )
             S_hat_list, _ = model.run(Y, U)
-            error_pp = compute_error_series(S_hat_list, S_series, S_offline, error_normalization, divide_by_n2)
-            errors['pp'] = error_pp
+            for variant in plot_variants:
+                errors[variant["key"]]["pp"] = compute_error_series(
+                    S_hat_list,
+                    S_series,
+                    S_offline,
+                    variant["normalization"],
+                    variant["divide_by_n2"],
+                )
             estimates_final['PP'] = S_hat_list[-1]
 
         if run_pp_sgd_flag:
@@ -418,10 +408,14 @@ def main() -> None:
                 lookahead=pp_sgd_lookahead,
             )
             S_hat_list, _ = model.run(Y, U)
-            error_pp_sgd = compute_error_series(
-                S_hat_list, S_series, S_offline, error_normalization, divide_by_n2
-            )
-            errors["pp_sgd"] = error_pp_sgd
+            for variant in plot_variants:
+                errors[variant["key"]]["pp_sgd"] = compute_error_series(
+                    S_hat_list,
+                    S_series,
+                    S_offline,
+                    variant["normalization"],
+                    variant["divide_by_n2"],
+                )
             estimates_final["PP-SGD"] = S_hat_list[-1]
         
         if run_pc_flag:
@@ -438,8 +432,14 @@ def main() -> None:
                     show_progress=False, name="pc_baseline", T_init=_pc_T_init(B_true),
                 )
                 estimates_pc, _ = pc.run(X, U)
-            error_pc = compute_error_series(estimates_pc, S_series, S_offline, error_normalization, divide_by_n2)
-            errors['pc'] = error_pc
+            for variant in plot_variants:
+                errors[variant["key"]]["pc"] = compute_error_series(
+                    estimates_pc,
+                    S_series,
+                    S_offline,
+                    variant["normalization"],
+                    variant["divide_by_n2"],
+                )
             estimates_final['PC'] = estimates_pc[-1]
         
         if run_co_flag:
@@ -456,8 +456,14 @@ def main() -> None:
                     show_progress=False, name="co_baseline", T_init=_pc_T_init(B_true),
                 )
                 estimates_co, _ = co.run(X, U)
-            error_co = compute_error_series(estimates_co, S_series, S_offline, error_normalization, divide_by_n2)
-            errors['co'] = error_co
+            for variant in plot_variants:
+                errors[variant["key"]]["co"] = compute_error_series(
+                    estimates_co,
+                    S_series,
+                    S_offline,
+                    variant["normalization"],
+                    variant["divide_by_n2"],
+                )
             estimates_final['CO'] = estimates_co[-1]
         
         if run_sgd_flag:
@@ -474,8 +480,14 @@ def main() -> None:
                     show_progress=False, name="sgd_baseline", T_init=_pc_T_init(B_true),
                 )
                 estimates_sgd, _ = sgd.run(X, U)
-            error_sgd = compute_error_series(estimates_sgd, S_series, S_offline, error_normalization, divide_by_n2)
-            errors['sgd'] = error_sgd
+            for variant in plot_variants:
+                errors[variant["key"]]["sgd"] = compute_error_series(
+                    estimates_sgd,
+                    S_series,
+                    S_offline,
+                    variant["normalization"],
+                    variant["divide_by_n2"],
+                )
             estimates_final['SGD'] = estimates_sgd[-1]
         
         if run_pg_flag:
@@ -493,34 +505,48 @@ def main() -> None:
             )
             pg_model = ProximalGradientBatchSEM(N, pg_config)
             estimates_pg, _ = pg_model.run(X, U)
-            error_pg = [
-                compute_error(estimates_pg[t], S_series[t], S_offline)
-                for t in range(T)
-            ]
-            errors['pg'] = error_pg
+            for variant in plot_variants:
+                errors[variant["key"]]["pg"] = compute_error_series(
+                    estimates_pg,
+                    S_series,
+                    S_offline,
+                    variant["normalization"],
+                    variant["divide_by_n2"],
+                )
             estimates_final['PG'] = estimates_pg[-1]
 
         # 全手法で t=0 の誤差を同じ初期値（S0=0）に揃える
-        baseline0 = compute_normalized_error(
-            np.zeros((N, N)),
-            S_series[0],
-            S_offline,
-            normalization=error_normalization,
-            divide_by_n2=divide_by_n2,
-        )
-        for k in list(errors.keys()):
-            if errors[k]:
-                errors[k][0] = float(baseline0)
+        for variant in plot_variants:
+            baseline0 = compute_normalized_error(
+                np.zeros((N, N)),
+                S_series[0],
+                S_offline,
+                normalization=variant["normalization"],
+                divide_by_n2=variant["divide_by_n2"],
+            )
+            v_errors = errors[variant["key"]]
+            for method_name in list(v_errors.keys()):
+                if v_errors[method_name]:
+                    v_errors[method_name][0] = float(baseline0)
         
-        return errors, estimates_final, data_path
+        return errors, estimates_final
     
     trial_seeds = [seed + i for i in range(num_trials)]
-    error_pp_total = np.zeros(T) if run_pp_flag else None
-    error_pp_sgd_total = np.zeros(T) if run_pp_sgd_flag else None
-    error_pc_total = np.zeros(T) if run_pc_flag else None
-    error_co_total = np.zeros(T) if run_co_flag else None
-    error_sgd_total = np.zeros(T) if run_sgd_flag else None
-    error_pg_total = np.zeros(T) if run_pg_flag else None
+    method_flags = {
+        "pp": run_pp_flag,
+        "pp_sgd": run_pp_sgd_flag,
+        "pc": run_pc_flag,
+        "co": run_co_flag,
+        "sgd": run_sgd_flag,
+        "pg": run_pg_flag,
+    }
+    error_totals: Dict[str, Dict[str, np.ndarray]] = {}
+    for variant in plot_variants:
+        totals: Dict[str, np.ndarray] = {}
+        for method_name, enabled in method_flags.items():
+            if enabled:
+                totals[method_name] = np.zeros(T)
+        error_totals[variant["key"]] = totals
     
     with tqdm_joblib(tqdm(desc="Progress", total=num_trials)):
         results = Parallel(n_jobs=-1, batch_size=1, prefer="threads")(
@@ -528,30 +554,25 @@ def main() -> None:
         )
     
     last_estimates = None
-    data_index: Dict[str, str] = {}
-    for (errs, estimates_final, data_path), trial_seed in zip(results, trial_seeds):
-        if run_pp_flag:
-            error_pp_total += np.array(errs['pp'])
-        if run_pp_sgd_flag:
-            error_pp_sgd_total += np.array(errs["pp_sgd"])
-        if run_pc_flag:
-            error_pc_total += np.array(errs['pc'])
-        if run_co_flag:
-            error_co_total += np.array(errs['co'])
-        if run_sgd_flag:
-            error_sgd_total += np.array(errs['sgd'])
-        if run_pg_flag:
-            error_pg_total += np.array(errs['pg'])
+    for (errs, estimates_final), trial_seed in zip(results, trial_seeds):
+        for variant in plot_variants:
+            v_key = variant["key"]
+            for method_name, enabled in method_flags.items():
+                if not enabled:
+                    continue
+                error_totals[v_key][method_name] += np.array(errs[v_key][method_name])
         last_estimates = estimates_final
-        if data_path is not None:
-            data_index[str(trial_seed)] = data_path
     
-    error_pp_mean = error_pp_total / num_trials if run_pp_flag else None
-    error_pp_sgd_mean = error_pp_sgd_total / num_trials if run_pp_sgd_flag else None
-    error_pc_mean = error_pc_total / num_trials if run_pc_flag else None
-    error_co_mean = error_co_total / num_trials if run_co_flag else None
-    error_sgd_mean = error_sgd_total / num_trials if run_sgd_flag else None
-    error_pg_mean = error_pg_total / num_trials if run_pg_flag else None
+    error_means: Dict[str, Dict[str, Optional[np.ndarray]]] = {}
+    for variant in plot_variants:
+        v_key = variant["key"]
+        v_means: Dict[str, Optional[np.ndarray]] = {}
+        for method_name, enabled in method_flags.items():
+            if enabled:
+                v_means[method_name] = error_totals[v_key][method_name] / num_trials
+            else:
+                v_means[method_name] = None
+        error_means[v_key] = v_means
 
     def _mean_after_burnin(arr: Optional[np.ndarray]) -> Optional[float]:
         if arr is None:
@@ -562,98 +583,84 @@ def main() -> None:
             return None
         return float(np.mean(arr[burn_in:]))
 
-    summary_means = {
-        "full_mean": {
-            "pp": float(np.mean(error_pp_mean)) if run_pp_flag else None,
-            "pp_sgd": float(np.mean(error_pp_sgd_mean)) if run_pp_sgd_flag else None,
-            "pc": float(np.mean(error_pc_mean)) if run_pc_flag else None,
-            "co": float(np.mean(error_co_mean)) if run_co_flag else None,
-            "sgd": float(np.mean(error_sgd_mean)) if run_sgd_flag else None,
-            "pg": float(np.mean(error_pg_mean)) if run_pg_flag else None,
-        },
-        "post_burnin_mean": {
-            "pp": _mean_after_burnin(error_pp_mean),
-            "pp_sgd": _mean_after_burnin(error_pp_sgd_mean),
-            "pc": _mean_after_burnin(error_pc_mean),
-            "co": _mean_after_burnin(error_co_mean),
-            "sgd": _mean_after_burnin(error_sgd_mean),
-            "pg": _mean_after_burnin(error_pg_mean),
-        },
-    }
-    
-    plt.figure(figsize=(10, 6))
-    if run_co_flag:
-        plt.plot(error_co_mean, color='blue', label='Correction Only')
-    if run_pc_flag:
-        plt.plot(error_pc_mean, color='limegreen', label='Prediction Correction')
-    if run_sgd_flag:
-        plt.plot(error_sgd_mean, color='cyan', label='SGD')
-    if run_pg_flag:
-        plt.plot(error_pg_mean, color='magenta', label='ProxGrad')
-    if run_pp_sgd_flag:
-        plt.plot(error_pp_sgd_mean, color='orange', label='PP-SGD (q=1,r=1)')
-    if run_pp_flag:
-        plt.plot(error_pp_mean, color='red', label='Proposed (PP)')
-    plt.yscale('log')
-    plt.xlim(left=0, right=T)
-    plt.xlabel('t')
-    if error_normalization == "offline_solution":
-        ylabel = r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^* - S_{\mathrm{offline}}\|_F^2}$'
-    else:
-        ylabel = r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^*\|_F^2}$'
-    if divide_by_n2:
-        ylabel = ylabel + r'\,$/\,N^2$'
-    plt.ylabel(ylabel)
-    plt.grid(True, which='both')
-    plt.legend()
+    summary_means_by_variant: Dict[str, Dict[str, Dict[str, Optional[float]]]] = {}
+    for variant in plot_variants:
+        v_key = variant["key"]
+        v_means = error_means[v_key]
+        summary_means_by_variant[v_key] = {
+            "full_mean": {
+                "pp": float(np.mean(v_means["pp"])) if run_pp_flag else None,
+                "pp_sgd": float(np.mean(v_means["pp_sgd"])) if run_pp_sgd_flag else None,
+                "pc": float(np.mean(v_means["pc"])) if run_pc_flag else None,
+                "co": float(np.mean(v_means["co"])) if run_co_flag else None,
+                "sgd": float(np.mean(v_means["sgd"])) if run_sgd_flag else None,
+                "pg": float(np.mean(v_means["pg"])) if run_pg_flag else None,
+            },
+            "post_burnin_mean": {
+                "pp": _mean_after_burnin(v_means["pp"]),
+                "pp_sgd": _mean_after_burnin(v_means["pp_sgd"]),
+                "pc": _mean_after_burnin(v_means["pc"]),
+                "co": _mean_after_burnin(v_means["co"]),
+                "sgd": _mean_after_burnin(v_means["sgd"]),
+                "pg": _mean_after_burnin(v_means["pg"]),
+            },
+        }
+
+    summary_means = summary_means_by_variant.get(primary_variant_key, {})
     
     run_started_at = datetime.now()
-    filename = make_result_filename(
-        prefix="piecewise",
-        params={
-            "N": N, "T": T, "num_trials": num_trials,
-            "maxweight": max_weight, "stde": std_e, "K": K,
-            "seed": seed, "r": r, "q": q, "rho": rho, "mulambda": mu_lambda, "lambdaS": lambda_S,
-        },
-        suffix=".png",
-    )
-    print(filename)
-    plt.tight_layout()
-    plt.savefig(str(Path(result_dir) / filename), bbox_inches='tight')
-    plt.show()
-
-    # burn-in 以降のみの図も保存（提案法の立ち上がり差を切り分ける）
-    burnin_filename = None
-    if burn_in > 0:
+    figure_records = []
+    for variant in plot_variants:
+        v_key = variant["key"]
+        v_means = error_means[v_key]
         plt.figure(figsize=(10, 6))
         if run_co_flag:
-            plt.plot(np.arange(burn_in, T), error_co_mean[burn_in:], color='blue', label='Correction Only')
+            plt.plot(v_means["co"], color='blue', label='Correction Only')
         if run_pc_flag:
-            plt.plot(np.arange(burn_in, T), error_pc_mean[burn_in:], color='limegreen', label='Prediction Correction')
+            plt.plot(v_means["pc"], color='limegreen', label='Prediction Correction')
         if run_sgd_flag:
-            plt.plot(np.arange(burn_in, T), error_sgd_mean[burn_in:], color='cyan', label='SGD')
+            plt.plot(v_means["sgd"], color='cyan', label='SGD')
         if run_pg_flag:
-            plt.plot(np.arange(burn_in, T), error_pg_mean[burn_in:], color='magenta', label='ProxGrad')
+            plt.plot(v_means["pg"], color='magenta', label='ProxGrad')
         if run_pp_sgd_flag:
-            plt.plot(np.arange(burn_in, T), error_pp_sgd_mean[burn_in:], color='orange', label='PP-SGD (q=1,r=1)')
+            plt.plot(v_means["pp_sgd"], color='orange', label='PP-SGD (q=1,r=1)')
         if run_pp_flag:
-            plt.plot(np.arange(burn_in, T), error_pp_mean[burn_in:], color='red', label='Proposed (PP)')
+            plt.plot(v_means["pp"], color='red', label='Proposed (PP)')
         plt.yscale('log')
-        plt.xlim(left=burn_in, right=T)
+        plt.xlim(left=0, right=T)
         plt.xlabel('t')
-        if error_normalization == "offline_solution":
-            ylabel_b = r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^* - S_{\mathrm{offline}}\|_F^2}$'
+        if variant["normalization"] == "offline_solution":
+            ylabel = r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^* - S_{\mathrm{offline}}\|_F^2}$'
         else:
-            ylabel_b = r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^*\|_F^2}$'
-        if divide_by_n2:
-            ylabel_b = ylabel_b + r'\,$/\,N^2$'
-        plt.ylabel(ylabel_b)
+            ylabel = r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^*\|_F^2}$'
+        if variant["divide_by_n2"]:
+            ylabel = ylabel + r'\,$/\,N^2$'
+        plt.ylabel(ylabel)
         plt.grid(True, which='both')
         plt.legend()
-        burnin_filename = filename.replace(".png", f"_burnin{burn_in}.png")
+
+        filename = make_result_filename(
+            prefix="piecewise",
+            params={
+                "N": N, "T": T, "num_trials": num_trials,
+                "maxweight": max_weight, "stde": std_e, "K": K,
+                "seed": seed, "r": r, "q": q, "rho": rho, "mulambda": mu_lambda, "lambdaS": lambda_S,
+                "norm": "true" if variant["normalization"] == "true_value" else "offline",
+                "n2": int(variant["divide_by_n2"]),
+            },
+            suffix=".png",
+        )
+        print(filename)
         plt.tight_layout()
-        plt.savefig(str(Path(result_dir) / burnin_filename), bbox_inches='tight')
+        plt.savefig(str(Path(result_dir) / filename), bbox_inches='tight')
         plt.show()
+        figure_records.append({
+            "key": v_key,
+            "normalization": variant["normalization"],
+            "divide_by_n2": variant["divide_by_n2"],
+            "figure": filename,
+            "figure_path": str(Path(result_dir) / filename),
+        })
     
     # ヒートマップ表示（最後の試行の最終時刻）
     # 3種類のヒートマップを生成：全体、推定のみ、差分
@@ -730,6 +737,14 @@ def main() -> None:
             "burn_in": burn_in_cfg,
             "burn_in_effective": burn_in,
             "divide_by_n2": divide_by_n2,
+            "plot_variants": [
+                {
+                    "key": v["key"],
+                    "normalization": v["normalization"],
+                    "divide_by_n2": v["divide_by_n2"],
+                }
+                for v in plot_variants
+            ],
         },
         "comparison": {
             "pc_model": pc_model,
@@ -764,33 +779,28 @@ def main() -> None:
             },
         },
         "results": {
-            "figure": filename,
-            "figure_path": str(Path(result_dir) / filename),
-            "figure_burnin": burnin_filename,
-            "figure_burnin_path": str(Path(result_dir) / burnin_filename) if burnin_filename else None,
+            "figures": figure_records,
             "summary_means": summary_means,
+            "summary_means_by_variant": summary_means_by_variant,
             "metrics": {
-                "pp": error_pp_mean.tolist() if run_pp_flag else None,
-                "pp_sgd": error_pp_sgd_mean.tolist() if run_pp_sgd_flag else None,
-                "pc": error_pc_mean.tolist() if run_pc_flag else None,
-                "co": error_co_mean.tolist() if run_co_flag else None,
-                "sgd": error_sgd_mean.tolist() if run_sgd_flag else None,
-                "pg": error_pg_mean.tolist() if run_pg_flag else None,
+                "pp": error_means[primary_variant_key]["pp"].tolist() if run_pp_flag else None,
+                "pp_sgd": error_means[primary_variant_key]["pp_sgd"].tolist() if run_pp_sgd_flag else None,
+                "pc": error_means[primary_variant_key]["pc"].tolist() if run_pc_flag else None,
+                "co": error_means[primary_variant_key]["co"].tolist() if run_co_flag else None,
+                "sgd": error_means[primary_variant_key]["sgd"].tolist() if run_sgd_flag else None,
+                "pg": error_means[primary_variant_key]["pg"].tolist() if run_pg_flag else None,
             },
-        },
-        "data": {
-            "saved": bool(save_sim_data),
-            "dir": str(data_dir) if data_dir is not None else None,
-            "files": data_index,
-            "format": "npz",
-            "contents": [
-                "S_series",
-                "T_mat",
-                "Z",
-                "Y",
-                "rng_state_json",
-                "trial_seed",
-            ],
+            "metrics_by_variant": {
+                v["key"]: {
+                    "pp": error_means[v["key"]]["pp"].tolist() if run_pp_flag else None,
+                    "pp_sgd": error_means[v["key"]]["pp_sgd"].tolist() if run_pp_sgd_flag else None,
+                    "pc": error_means[v["key"]]["pc"].tolist() if run_pc_flag else None,
+                    "co": error_means[v["key"]]["co"].tolist() if run_co_flag else None,
+                    "sgd": error_means[v["key"]]["sgd"].tolist() if run_sgd_flag else None,
+                    "pg": error_means[v["key"]]["pg"].tolist() if run_pg_flag else None,
+                }
+                for v in plot_variants
+            },
         },
         "snapshots": script_copies,
         "hyperparam_json": str(hyperparam_path) if hyperparam_path is not None else None,
