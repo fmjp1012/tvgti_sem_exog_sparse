@@ -597,7 +597,6 @@ CONFIG_MAIN = SimulationConfig(
         subdir_piecewise="exog_sparse_piecewise",
         subdir_linear="exog_sparse_linear",
         subdir_tuning="exog_sparse_tuning",
-        save_images=False,
         save_sim_data=True,
     ),
     

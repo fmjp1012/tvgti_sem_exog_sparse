@@ -25,7 +25,7 @@ TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
 .PHONY: help config real_config tune_piecewise tune_linear tune_real real run_piecewise run_linear run_real run_real_test piecewise linear \
         tune-piecewise tune-linear run-piecewise run-linear tune-and-run-piecewise tune-and-run-linear \
         bg_piecewise bg_linear bg_tune_piecewise bg_tune_linear bg_run_piecewise bg_run_linear bg_run_piecewise_hp \
-        bg_status bg_stop
+        bg_queue bg_status bg_stop
 
 help:
 	@echo "=========================================="
@@ -65,6 +65,8 @@ help:
 	@echo "  make bg_run_piecewise # Piecewise: シミュレーションのみ (バックグラウンド)"
 	@echo "  make bg_run_piecewise_hp HYPER=path/to.json T=2000  # Piecewise: 指定ハイパラ+Tで実行 (バックグラウンド)"
 	@echo "  make bg_run_linear    # Linear: シミュレーションのみ (バックグラウンド)"
+	@echo "  make bg_queue QUEUE=\"piecewise run_linear\"  # 指定ターゲットを順次キュー実行 (バックグラウンド)"
+	@echo "  make bg_queue QUEUE=\"piecewise@cfgs/a.json piecewise@cfgs/b.json\"  # 同一ターゲットを別設定で順次実行"
 	@echo ""
 	@echo "  make bg_status        # バックグラウンドジョブの状態確認"
 	@echo "  make bg_stop          # バックグラウンドジョブを停止"
@@ -193,6 +195,40 @@ bg_run_linear: $(LOG_DIR)
 	@nohup $(PYTHON) -u -m code.run_linear > $(LOG_DIR)/run_linear_$(TIMESTAMP).log 2>&1 & echo $$! > $(LOG_DIR)/run_linear.pid
 	@echo "PID: $$(cat $(LOG_DIR)/run_linear.pid)"
 	@echo "ログ確認: tail -f $(LOG_DIR)/run_linear_$(TIMESTAMP).log"
+
+bg_queue: $(LOG_DIR)
+	@test -n "$(QUEUE)" || (echo "ERROR: QUEUE=\"piecewise run_linear\" のようにターゲットを指定してください" && exit 1)
+	@queue_ts=$$(date +%Y%m%d_%H%M%S); \
+	queue_log="$(LOG_DIR)/queue_$${queue_ts}.log"; \
+	echo "バックグラウンドでキュー実行を開始します..."; \
+	echo "QUEUE: $(QUEUE)"; \
+	echo "キューログ: $$queue_log"; \
+	nohup bash -c 'set -euo pipefail; \
+		echo "[queue] start: $$(date)"; \
+		for item in $(QUEUE); do \
+			target="$${item%@*}"; \
+			cfg=""; \
+			if [ "$$item" != "$$target" ]; then \
+				cfg="$${item#*@}"; \
+			fi; \
+			job_ts=$$(date +%Y%m%d_%H%M%S); \
+			if [ -n "$$cfg" ]; then \
+				cfg_tag=$$(basename "$$cfg"); \
+				cfg_tag="$${cfg_tag%.*}"; \
+				job_log="$(LOG_DIR)/queue_$${target}_$${cfg_tag}_$${job_ts}.log"; \
+				echo "[queue] run $$target (cfg: $$cfg, log: $$job_log)"; \
+				TVG_CONFIG_OVERRIDE="$$cfg" $(MAKE) $$target > "$$job_log" 2>&1; \
+			else \
+				job_log="$(LOG_DIR)/queue_$${target}_$${job_ts}.log"; \
+				echo "[queue] run $$target (log: $$job_log)"; \
+				$(MAKE) $$target > "$$job_log" 2>&1; \
+			fi; \
+			echo "[queue] done $$target"; \
+		done; \
+		echo "[queue] finished: $$(date)";' \
+		> "$$queue_log" 2>&1 & echo $$! > $(LOG_DIR)/queue.pid; \
+	echo "PID: $$(cat $(LOG_DIR)/queue.pid)"; \
+	echo "キューログ確認: tail -f $$queue_log"
 
 bg_status:
 	@echo "=== バックグラウンドジョブの状態 ==="
