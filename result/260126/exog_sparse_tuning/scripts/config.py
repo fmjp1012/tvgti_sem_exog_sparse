@@ -431,9 +431,9 @@ CONFIG_MAIN = SimulationConfig(
     methods=MethodFlags(
         pp=True,
         pp_sgd=False,
-        pc=True,
-        co=True,
-        sgd=True,
+        pc=False,
+        co=False,
+        sgd=False,
         pg=False,
     ),
     
@@ -473,7 +473,7 @@ CONFIG_MAIN = SimulationConfig(
     tuning=TuningParams(
         tuning_trials=500,          # Optuna試行回数
         tuning_runs_per_trial=1,    # 各試行の平均を取る回数
-        truncation_horizon=800,     # チューニング時に使う時系列長（X[:, :T_tune]）
+        truncation_horizon=1000,     # チューニング時に使う時系列長（X[:, :T_tune]）
         tuning_seed=4,              # チューニング用seed
     ),
     
@@ -494,7 +494,7 @@ CONFIG_MAIN = SimulationConfig(
                 log=False,
                 type="categorical",
                 step=None,
-                choices=[200, 400, 600, 800, 1000],
+                choices=[20, 40, 200, 400, 600, 800, 1000],
             ),
             q=SearchRange(
                 low=0,
@@ -502,7 +502,7 @@ CONFIG_MAIN = SimulationConfig(
                 log=False,
                 type="categorical",
                 step=None,
-                choices=[8, 10, 20, 40],
+                choices=[4, 8, 10, 20, 40],
             ),
             # rho / lambda_S は log 探索で上下限を広げる（極端な条件も拾う）
             rho=SearchRange(low=1e-12, high=1e0, log=True, type="float", step=None, choices=None),           # レベル集合の閾値ρ（大きいほど制約が緩い）
