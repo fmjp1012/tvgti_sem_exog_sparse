@@ -12,6 +12,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from dataclasses import asdict, is_dataclass
+import os
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
@@ -439,7 +440,7 @@ CONFIG_MAIN = SimulationConfig(
     # シナリオ共通パラメータ
     common=CommonParams(
         N=20,              # ノード数（行列Sは N×N）
-        T=10000,           # 再現対象に合わせる
+        T=1000,           # 再現対象に合わせる
         sparsity=0.7,      # スパース性（0要素の割合）
         max_weight=0.5,    # Sの非ゼロ重みの上限（生成時）
         std_e=0.05,        # 観測ノイズの標準偏差
@@ -633,7 +634,7 @@ CONFIG_MAIN = SimulationConfig(
         error_normalization="true_value",  # メタデータより
         # error_normalization="offline_solution",
         # PPは序盤の更新が弱く出やすいので、自動burn-inを推奨（r+q-2）
-        burn_in=-1,                        # -1なら burn_in=r+q-2（“立ち上がり”区間を評価から除外）
+        burn_in=0,                        # -1なら burn_in=r+q-2（“立ち上がり”区間を評価から除外）
         divide_by_n2=False,                # Trueなら (誤差) / N^2 をプロット・チューニングにも適用
     ),
 
@@ -658,10 +659,11 @@ CONFIG_MAIN = SimulationConfig(
     ),
     
     # 実行モード
-    skip_tuning=True,
+    skip_tuning=False,
     skip_simulation=False,
     # piecewise_K=4_N=20_T=1000 のハイパラ（251201）
-    hyperparam_json=Path("result/251201/exog_sparse_tuning/piecewise_best_hyperparams_20251201_185134.json"),
+    # hyperparam_json=Path("result/251201/exog_sparse_tuning/piecewise_best_hyperparams_20251201_185134.json"),
+    hyperparam_json=None,
 )
 
 # =============================================================================
@@ -900,7 +902,11 @@ CONFIG = CONFIG_TEST if USE_TEST_CONFIG else CONFIG_MAIN
 # =============================================================================
 def get_config() -> SimulationConfig:
     """グローバル設定を取得"""
-    return CONFIG
+    cfg = CONFIG
+    scenario = os.getenv("TVG_TUNE_AND_RUN_SCENARIO")
+    if scenario:
+        cfg.scripts.tune_and_run_scenario = str(scenario).strip()
+    return cfg
 
 
 def _to_jsonable(obj: Any) -> Any:

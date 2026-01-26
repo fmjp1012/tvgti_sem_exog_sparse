@@ -91,10 +91,10 @@ real_config:
 	$(PYTHON) code/real_config.py
 
 piecewise:
-	$(PYTHON) -m code.tune_and_run piecewise
+	TVG_TUNE_AND_RUN_SCENARIO=piecewise $(PYTHON) -m code.tune_and_run
 
 linear:
-	$(PYTHON) -m code.tune_and_run linear
+	TVG_TUNE_AND_RUN_SCENARIO=linear $(PYTHON) -m code.tune_and_run
 
 tune_piecewise:
 	$(PYTHON) -m code.tune_piecewise
@@ -149,14 +149,14 @@ $(LOG_DIR):
 bg_piecewise: $(LOG_DIR)
 	@echo "バックグラウンドで piecewise を開始します..."
 	@echo "ログファイル: $(LOG_DIR)/piecewise_$(TIMESTAMP).log"
-	@nohup $(PYTHON) -u -m code.tune_and_run piecewise > $(LOG_DIR)/piecewise_$(TIMESTAMP).log 2>&1 & echo $$! > $(LOG_DIR)/piecewise.pid
+	@nohup env TVG_TUNE_AND_RUN_SCENARIO=piecewise $(PYTHON) -u -m code.tune_and_run > $(LOG_DIR)/piecewise_$(TIMESTAMP).log 2>&1 & echo $$! > $(LOG_DIR)/piecewise.pid
 	@echo "PID: $$(cat $(LOG_DIR)/piecewise.pid)"
 	@echo "ログ確認: tail -f $(LOG_DIR)/piecewise_$(TIMESTAMP).log"
 
 bg_linear: $(LOG_DIR)
 	@echo "バックグラウンドで linear を開始します..."
 	@echo "ログファイル: $(LOG_DIR)/linear_$(TIMESTAMP).log"
-	@nohup $(PYTHON) -u -m code.tune_and_run linear > $(LOG_DIR)/linear_$(TIMESTAMP).log 2>&1 & echo $$! > $(LOG_DIR)/linear.pid
+	@nohup env TVG_TUNE_AND_RUN_SCENARIO=linear $(PYTHON) -u -m code.tune_and_run > $(LOG_DIR)/linear_$(TIMESTAMP).log 2>&1 & echo $$! > $(LOG_DIR)/linear.pid
 	@echo "PID: $$(cat $(LOG_DIR)/linear.pid)"
 	@echo "ログ確認: tail -f $(LOG_DIR)/linear_$(TIMESTAMP).log"
 
