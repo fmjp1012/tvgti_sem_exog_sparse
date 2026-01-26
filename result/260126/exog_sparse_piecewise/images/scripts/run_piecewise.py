@@ -6,12 +6,10 @@ Piecewise シナリオのシミュレーション実行スクリプト
 
 使用方法:
     python -m code.run_piecewise
-    python -m code.run_piecewise --hyperparam_json path/to/hyperparams.json
 """
 
 from __future__ import annotations
 
-import argparse
 import json
 import subprocess
 import sys
@@ -161,37 +159,13 @@ def load_hyperparams(json_path: Optional[Path]) -> Optional[Dict[str, Dict[str, 
         return json.load(f)
 
 
-def parse_args() -> Optional[Path]:
-    """コマンドライン引数をパース"""
-    parser = argparse.ArgumentParser(
-        description="Piecewiseシナリオの実験実行（設定は config.py で変更）"
-    )
-    parser.add_argument(
-        "--hyperparam_json",
-        type=Path,
-        default=None,
-        help="ハイパーパラメータJSONのパス（省略時はconfig.pyのデフォルト値を使用）"
-    )
-    parser.add_argument(
-        "--T",
-        type=int,
-        default=None,
-        help="時系列長Tを上書き（省略時はconfig.py）",
-    )
-    args = parser.parse_args()
-    return args
-
-
-def main() -> None:
+def main(hyperparam_path: Optional[Path] = None) -> None:
     """メイン処理"""
-    args = parse_args()
-    # CLI が未指定なら config.py 側の hyperparam_json を使う
-    hyperparam_path = args.hyperparam_json
-    
+    if len(sys.argv) > 1:
+        raise SystemExit("CLI 引数は使用できません。code/config.py を編集してください。")
+    # config.py 側の hyperparam_json を使う
     # config.py から設定を取得
     cfg = get_config()
-    if args.T is not None:
-        cfg.common.T = int(args.T)
     if hyperparam_path is None and getattr(cfg, "hyperparam_json", None) is not None:
         hyperparam_path = cfg.hyperparam_json
     
