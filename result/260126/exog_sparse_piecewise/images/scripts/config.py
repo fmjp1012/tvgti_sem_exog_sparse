@@ -645,7 +645,7 @@ CONFIG_MAIN = SimulationConfig(
         pc_use_true_T_init=False,          # PC系に真のTを渡すか（noexogでは基本使われない）
         pc_T_init_identity_scale=1.0,      # pc_use_true_T_init=False のときの T_init=I*scale
         pp_init_b0="true_T_diag",          # PPのT初期値（b0）
-        pp_lookahead=-1,                   # PPの先読み（-1なら r+q-2。未来データを使うためオンラインではない）
+        pp_lookahead=0,                   # PPの先読み（-1なら r+q-2。未来データを使うためオンラインではない）
     ),
     
     # 出力設定
@@ -672,9 +672,9 @@ CONFIG_TEST = SimulationConfig(
     methods=MethodFlags(
         pp=True,
         pp_sgd=False,
-        # pc=True,
-        # co=True,
-        # sgd=True,
+        pc=False,
+        co=False,
+        sgd=False,
         pg=False,
     ),
     

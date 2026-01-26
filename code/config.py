@@ -439,7 +439,7 @@ CONFIG_MAIN = SimulationConfig(
     # シナリオ共通パラメータ
     common=CommonParams(
         N=20,              # ノード数（行列Sは N×N）
-        T=10000,           # 再現対象に合わせる
+        T=1000,           # 再現対象に合わせる
         sparsity=0.7,      # スパース性（0要素の割合）
         max_weight=0.5,    # Sの非ゼロ重みの上限（生成時）
         std_e=0.05,        # 観測ノイズの標準偏差
