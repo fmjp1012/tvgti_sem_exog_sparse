@@ -1,0 +1,52 @@
+{
+  "hyperparam_json": null,
+  "hyperparam_json_content": null,
+  "resolved_hyperparams": {
+    "pp": {
+      "r": 50,
+      "q": 5,
+      "rho": 0.001,
+      "mu_lambda": 1.0,
+      "lambda_S": 0.01
+    },
+    "pp_sgd": {
+      "r": 1,
+      "q": 1,
+      "rho": 0.001,
+      "mu_lambda": 1.0,
+      "lambda_S": 0.01
+    },
+    "pc": {
+      "lambda_reg": 0.001,
+      "alpha": 0.01,
+      "beta": 0.01,
+      "gamma": 0.95,
+      "P": 1,
+      "C": 1
+    },
+    "co": {
+      "lambda_reg": 0.001,
+      "alpha": 0.01,
+      "beta_co": 0.01,
+      "gamma": 0.95,
+      "C": 1
+    },
+    "sgd": {
+      "lambda_reg": 0.001,
+      "alpha": 0.01,
+      "beta_sgd": 0.01,
+      "C": 1
+    },
+    "pg": {
+      "lambda_reg": 0.001,
+      "step_scale": 1.0,
+      "step_size": null,
+      "use_fista": true,
+      "use_backtracking": false,
+      "max_iter": 500,
+      "tol": 0.0001
+    }
+  },
+  "offline_lambda_l1": null,
+  "note": "Resolved from hyperparam_json if provided; otherwise config defaults."
+}
