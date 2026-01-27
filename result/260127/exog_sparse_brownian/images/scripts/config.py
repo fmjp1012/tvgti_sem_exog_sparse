@@ -457,7 +457,7 @@ CONFIG_MAIN = SimulationConfig(
 
     # Brownianシナリオのパラメータ
     brownian=BrownianParams(
-        K=4,
+        K=2,
         std_S=0.05,
     ),
     

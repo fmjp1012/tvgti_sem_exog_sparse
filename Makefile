@@ -22,9 +22,9 @@ endif
 LOG_DIR ?= logs
 TIMESTAMP := $(shell date +%Y%m%d_%H%M%S)
 
-.PHONY: help config real_config tune_piecewise tune_linear tune_real real run_piecewise run_linear run_real run_real_test piecewise linear \
-        tune-piecewise tune-linear run-piecewise run-linear tune-and-run-piecewise tune-and-run-linear \
-        bg_piecewise bg_linear bg_tune_piecewise bg_tune_linear bg_run_piecewise bg_run_linear bg_run_piecewise_hp \
+.PHONY: help config real_config tune_piecewise tune_linear tune_real real run_piecewise run_linear run_brownian run_real run_real_test piecewise linear brownian \
+        tune-piecewise tune-linear run-piecewise run-linear run-brownian tune-and-run-piecewise tune-and-run-linear \
+        bg_piecewise bg_linear bg_brownian bg_tune_piecewise bg_tune_linear bg_run_piecewise bg_run_linear bg_run_brownian bg_run_piecewise_hp \
         bg_queue bg_queue_status bg_status bg_stop
 
 help:
@@ -38,6 +38,7 @@ help:
 	@echo ""
 	@echo "  make piecewise        # Piecewise: チューニング → シミュレーション"
 	@echo "  make linear           # Linear: チューニング → シミュレーション"
+	@echo "  make brownian         # Brownian: シミュレーションのみ"
 	@echo "  make tune-and-run-piecewise  # piecewise と同じ（別名）"
 	@echo "  make tune-and-run-linear     # linear と同じ（別名）"
 	@echo ""
@@ -49,8 +50,10 @@ help:
 	@echo ""
 	@echo "  make run_piecewise    # Piecewise: シミュレーションのみ"
 	@echo "  make run_linear       # Linear: シミュレーションのみ"
+	@echo "  make run_brownian     # Brownian: シミュレーションのみ"
 	@echo "  make run-piecewise    # run_piecewise と同じ（別名）"
 	@echo "  make run-linear       # run_linear と同じ（別名）"
+	@echo "  make run-brownian     # run_brownian と同じ（別名）"
 	@echo "  make run_real         # Realデータ: mismatch / recon 比較"
 	@echo "  make run_real_test    # Realデータ: 軽量テスト実行 (N/T小)"
 	@echo "  make real             # Realデータ: チューニング → 実行"
@@ -60,11 +63,13 @@ help:
 	@echo "=========================================="
 	@echo "  make bg_piecewise     # Piecewise: バックグラウンドで実行"
 	@echo "  make bg_linear        # Linear: バックグラウンドで実行"
+	@echo "  make bg_brownian      # Brownian: バックグラウンドで実行"
 	@echo "  make bg_tune_piecewise # Piecewise: チューニングのみ (バックグラウンド)"
 	@echo "  make bg_tune_linear    # Linear: チューニングのみ (バックグラウンド)"
 	@echo "  make bg_run_piecewise # Piecewise: シミュレーションのみ (バックグラウンド)"
 	@echo "  make bg_run_piecewise_hp HYPER=path/to.json T=2000  # Piecewise: 指定ハイパラ+Tで実行 (バックグラウンド)"
 	@echo "  make bg_run_linear    # Linear: シミュレーションのみ (バックグラウンド)"
+	@echo "  make bg_run_brownian  # Brownian: シミュレーションのみ (バックグラウンド)"
 	@echo "  make bg_queue QUEUE=\"piecewise run_linear\"  # 指定ターゲットを順次キュー実行 (バックグラウンド)"
 	@echo "  make bg_queue QUEUE=\"piecewise@cfgs/a.json piecewise@cfgs/b.json\"  # 同一ターゲットを別設定で順次実行"
 	@echo ""
@@ -96,6 +101,9 @@ piecewise:
 linear:
 	TVG_TUNE_AND_RUN_SCENARIO=linear $(PYTHON) -m code.tune_and_run
 
+brownian:
+	$(PYTHON) -m code.run_brownian
+
 tune_piecewise:
 	$(PYTHON) -m code.tune_piecewise
 
@@ -114,6 +122,9 @@ run_piecewise:
 run_linear:
 	$(PYTHON) -m code.run_linear
 
+run_brownian:
+	$(PYTHON) -m code.run_brownian
+
 # ---- エイリアス（覚えやすい名前） ----
 tune-and-run-piecewise: piecewise
 	@:
@@ -131,6 +142,9 @@ run-piecewise: run_piecewise
 	@:
 
 run-linear: run_linear
+	@:
+
+run-brownian: run_brownian
 	@:
 
 run_real:
@@ -197,6 +211,16 @@ bg_run_linear: $(LOG_DIR)
 	@nohup $(PYTHON) -u -m code.run_linear > $(LOG_DIR)/run_linear_$(TIMESTAMP).log 2>&1 & echo $$! > $(LOG_DIR)/run_linear.pid
 	@echo "PID: $$(cat $(LOG_DIR)/run_linear.pid)"
 	@echo "ログ確認: tail -f $(LOG_DIR)/run_linear_$(TIMESTAMP).log"
+
+bg_run_brownian: $(LOG_DIR)
+	@echo "バックグラウンドで run_brownian を開始します..."
+	@echo "ログファイル: $(LOG_DIR)/run_brownian_$(TIMESTAMP).log"
+	@nohup $(PYTHON) -u -m code.run_brownian > $(LOG_DIR)/run_brownian_$(TIMESTAMP).log 2>&1 & echo $$! > $(LOG_DIR)/run_brownian.pid
+	@echo "PID: $$(cat $(LOG_DIR)/run_brownian.pid)"
+	@echo "ログ確認: tail -f $(LOG_DIR)/run_brownian_$(TIMESTAMP).log"
+
+bg_brownian: bg_run_brownian
+	@:
 
 bg_queue: $(LOG_DIR)
 	@test -n "$(QUEUE)" || (echo "ERROR: QUEUE=\"piecewise run_linear\" のようにターゲットを指定してください" && exit 1)

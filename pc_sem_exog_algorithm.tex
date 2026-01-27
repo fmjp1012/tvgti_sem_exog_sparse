@@ -1,0 +1,110 @@
+% Paper-ready summary of the Prediction--Correction (PC) baseline implemented in:
+%   models/tvgti_pc/prediction_correction_sem.py
+%
+% Recommended packages:
+%   \usepackage{amsmath,amssymb}
+%   \usepackage{algorithm}
+%   \usepackage[noend]{algpseudocode}
+%
+% Notation:
+%   - Observations: x_t \in \mathbb{R}^N, z_t \in \mathbb{R}^N (optional; same shape as x_t)
+%   - Graph/SEM parameter: S_t \in \mathbb{R}^{N\times N} with diag(S_t)=0 (no self-loops)
+%   - Exogenous diagonal effect: b_t \in \mathbb{R}^N, B_t := \mathrm{Diag}(b_t)
+%   - EW covariances: \Sigma_{xx,t}, \Sigma_{xz,t}, \Sigma_{zz,t}
+%   - Increments: \Delta_{xx,t} := \Sigma_{xx,t} - \Sigma_{xx,t-1} (and similarly xz, zz)
+%
+% This file is intended to be \input{} into your main TeX document.
+
+\begin{algorithm}[t]
+\caption{Prediction--Correction (PC) for SEM with exogenous inputs (implementation-matched)}
+\label{alg:pc-sem-exog}
+\begin{algorithmic}[1]
+\Require Time series $\{x_t\}_{t=0}^{T-1}$, optional $\{z_t\}_{t=0}^{T-1}$ (same dimension as $x_t$)
+\Require Hyperparameters: $\lambda>0$, base steps $\alpha>0$, $\beta\ge 0$ (optional), forgetting $\gamma\in(0,1)$, exog-forgetting $\gamma_z\in(0,1)$, prediction steps $P\in\mathbb{Z}_{\ge0}$, correction steps $C\in\mathbb{Z}_{\ge0}$
+\Require Initialization: $S_{-1}$ with $\mathrm{diag}(S_{-1})=0$, $b_{-1}$ (default $0$), and $\Sigma_{xx,-1}=\Sigma_{xz,-1}=\Sigma_{zz,-1}=0$
+\Ensure Estimates $\{S_t\}_{t=0}^{T-1}$ (and $\{b_t\}$ if exogenous is enabled)
+
+\State \textbf{Helper operators:}
+\Statex \hspace{1em} $\mathrm{Proj}_{\mathrm{diag}=0}(M)$: set diagonal of $M$ to $0$
+\Statex \hspace{1em} $\mathrm{Diag}(v)$: diagonal matrix whose diagonal is vector $v$
+\Statex \hspace{1em} $\mathrm{diag}(M)$: vector consisting of the diagonal entries of matrix $M$
+\Statex \hspace{1em} $\mathrm{Soft}(u,\tau) := \mathrm{sign}(u)\max(|u|-\tau,0)$ (element-wise)
+\Statex \hspace{1em} $\mathrm{Prox}_{\lambda\|\cdot\|_{1,\mathrm{off}}}(M)$: apply $\mathrm{Soft}(\cdot,\lambda)$ only to off-diagonal entries, keep diagonal $0$
+\Statex \hspace{1em} $\eta(\eta_0;A_1,\dots,A_k) := \eta_0 / \max\{1,\max_i \|A_i\|_F\}$  \Comment{adaptive step scaling used in code}
+
+\State \textbf{(Regularized) per-time objective used for gradients:}
+\Statex \hspace{1em} $f_t(S,b) := \tfrac12\mathrm{tr}(S\Sigma_{xx,t}S^\top) - \mathrm{tr}(\Sigma_{xx,t}S^\top)
+ + \mathbb{I}_{\text{exog}}\Big[\tfrac12\mathrm{tr}(B\Sigma_{zz,t}B^\top) + \mathrm{tr}(S\Sigma_{xz,t}B^\top) - \mathrm{tr}(\Sigma_{xz,t}B^\top)\Big]$
+\Statex \hspace{1em} Minimize $f_t(S,b) + \lambda\|S\|_{1,\mathrm{off}}$ subject to $\mathrm{diag}(S)=0$, where $B=\mathrm{Diag}(b)$.
+
+\State \textbf{Initialize:} $S \gets \mathrm{Proj}_{\mathrm{diag}=0}(S_{-1})$, $b \gets b_{-1}$
+\State $\Sigma_{xx}\gets 0,\ \Sigma_{xz}\gets 0,\ \Sigma_{zz}\gets 0$; $\Delta_{xx}\gets 0,\ \Delta_{xz}\gets 0,\ \Delta_{zz}\gets 0$
+
+\For{$t=0$ to $T-1$}
+  \State \textbf{Prediction step} (performed before incorporating $(x_t,z_t)$, as in the implementation)
+  \State $S^{(0)} \gets S,\quad b^{(0)} \gets b$
+  \State $\eta_S \gets \eta(\alpha;\Sigma_{xx},\Delta_{xx}),\quad \tau_S \gets \lambda\,\eta_S$
+  \If{exog is enabled and $\beta$ is provided}
+    \State $\eta_b \gets \eta(\beta;\Sigma_{zz},\Delta_{zz})$
+  \Else
+    \State $\eta_b \gets 0$
+  \EndIf
+  \For{$p=1$ to $P$}
+    \State $\nabla_S \gets S^{(p-1)}\Sigma_{xx}-\Sigma_{xx}$
+    \If{exog is enabled}
+      \State $\nabla_S \gets \nabla_S + B^{(p-1)}\Sigma_{zx}$ \Comment{$\Sigma_{zx}=\Sigma_{xz}^\top$, $B^{(p-1)}=\mathrm{Diag}(b^{(p-1)})$}
+    \EndIf
+    \State $\nabla^{\Delta}_S \gets S^{(p-1)}\Delta_{xx}-\Delta_{xx}$
+    \If{exog is enabled}
+      \State $\nabla^{\Delta}_S \gets \nabla^{\Delta}_S + B^{(p-1)}\Delta_{zx}$
+    \EndIf
+    \State $\widetilde S \gets S^{(p-1)} - \eta_S(\nabla_S + \nabla^{\Delta}_S)$
+    \State $S^{(p)} \gets \mathrm{Proj}_{\mathrm{diag}=0}\!\Big(\mathrm{Prox}_{\tau_S\|\cdot\|_{1,\mathrm{off}}}(\widetilde S)\Big)$
+
+    \If{exog is enabled and $\eta_b>0$}
+      \State $\nabla_b \gets \mathrm{diag}\!\Big(S^{(p)}\Sigma_{xz} + B^{(p-1)}\Sigma_{zz} - \Sigma_{xz}\Big)$
+      \State $\nabla^{\Delta}_b \gets \mathrm{diag}\!\Big(S^{(p)}\Delta_{xz} + B^{(p-1)}\Delta_{zz} - \Delta_{xz}\Big)$
+      \State $b^{(p)} \gets b^{(p-1)} - \eta_b(\nabla_b + \nabla^{\Delta}_b)$
+    \Else
+      \State $b^{(p)} \gets b^{(p-1)}$
+    \EndIf
+  \EndFor
+  \State $S \gets S^{(P)},\quad b \gets b^{(P)}$
+
+  \State \textbf{EW covariance update} (matches \texttt{\_update\_covariances}):
+  \State $\Sigma_{xx}^{\text{old}} \gets \Sigma_{xx}$
+  \State $\Sigma_{xx} \gets \gamma\Sigma_{xx} + (1-\gamma)x_tx_t^\top$
+  \State $\Delta_{xx} \gets \Sigma_{xx} - \Sigma_{xx}^{\text{old}}$
+  \If{exog is enabled}
+    \State $\Sigma_{xz}^{\text{old}} \gets \Sigma_{xz}$;\ \ $\Sigma_{zz}^{\text{old}} \gets \Sigma_{zz}$
+    \State $\Sigma_{xz} \gets \gamma_z\Sigma_{xz} + (1-\gamma_z)x_tz_t^\top$
+    \State $\Sigma_{zz} \gets \gamma_z\Sigma_{zz} + (1-\gamma_z)z_tz_t^\top$
+    \State $\Delta_{xz} \gets \Sigma_{xz} - \Sigma_{xz}^{\text{old}}$;\ \ $\Delta_{zz} \gets \Sigma_{zz} - \Sigma_{zz}^{\text{old}}$
+  \Else
+    \State $\Sigma_{xz}\gets 0,\ \Sigma_{zz}\gets 0,\ \Delta_{xz}\gets 0,\ \Delta_{zz}\gets 0$
+  \EndIf
+
+  \State \textbf{Correction step} (proximal gradient on current $f_t$)
+  \State $\eta_S \gets \eta(\alpha;\Sigma_{xx}),\quad \tau_S \gets \lambda\,\eta_S$
+  \If{exog is enabled and $\beta$ is provided}
+    \State $\eta_b \gets \eta(\beta;\Sigma_{zz})$
+  \Else
+    \State $\eta_b \gets 0$
+  \EndIf
+  \For{$c=1$ to $C$}
+    \State $\nabla_S \gets S\Sigma_{xx}-\Sigma_{xx}$
+    \If{exog is enabled}
+      \State $\nabla_S \gets \nabla_S + B\Sigma_{zx}$
+    \EndIf
+    \State $S \gets \mathrm{Prox}_{\tau_S\|\cdot\|_{1,\mathrm{off}}}\!\big(S - \eta_S\nabla_S\big)$
+    \State $S \gets \mathrm{Proj}_{\mathrm{diag}=0}(S)$
+    \If{exog is enabled and $\eta_b>0$}
+      \State $\nabla_b \gets \mathrm{diag}\!\Big(S\Sigma_{xz} + B\Sigma_{zz} - \Sigma_{xz}\Big)$
+      \State $b \gets b - \eta_b\nabla_b$
+    \EndIf
+  \EndFor
+
+  \State \textbf{Output:} $S_t \gets S$ (and $b_t \gets b$ if applicable)
+\EndFor
+\end{algorithmic}
+\end{algorithm}
