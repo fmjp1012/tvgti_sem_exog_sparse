@@ -19,17 +19,20 @@ import datetime as dt
 from code.config import get_config, get_enabled_methods, SimulationConfig
 from code.hyperparam_tuning import (
     save_best_hyperparams,
+    tune_brownian_all_methods,
     tune_linear_all_methods,
     tune_piecewise_all_methods,
     SUPPORTED_METHODS,
 )
 from code.run_linear import LinearRunner
+from code.run_brownian import BrownianRunner
 from code.run_piecewise import main as run_piecewise_main
 
 
 SCENARIO_TO_TUNER = {
     "piecewise": tune_piecewise_all_methods,
     "linear": tune_linear_all_methods,
+    "brownian": tune_brownian_all_methods,
 }
 
 def _format_value(value: object) -> str:
@@ -82,12 +85,21 @@ def print_experiment_plan(scenario: str, cfg: SimulationConfig) -> None:
             ("K", cfg.piecewise.K),
         )
         _print_section("Piecewise Parameters", scenario_pairs)
+    elif scenario == "brownian":
+        scenario_pairs = (
+            ("K", cfg.brownian.K),
+            ("std_S", cfg.brownian.std_S),
+        )
+        _print_section("Brownian Parameters", scenario_pairs)
     
     tuning_pairs: Tuple[Tuple[str, object], ...] = (
         ("tuning_trials", cfg.tuning.tuning_trials),
         ("tuning_runs_per_trial", cfg.tuning.tuning_runs_per_trial),
         ("truncation_horizon", cfg.tuning.truncation_horizon),
         ("tuning_seed", cfg.tuning.tuning_seed),
+        ("objective", getattr(cfg.tuning, "objective", "mean")),
+        ("drift_penalty_weight", getattr(cfg.tuning, "drift_penalty_weight", 0.0)),
+        ("drift_window_frac", getattr(cfg.tuning, "drift_window_frac", 0.2)),
     )
     _print_section("Tuning Settings", tuning_pairs)
     
@@ -127,6 +139,10 @@ def run_simulation(scenario: str, hyperparam_path: Path, cfg: SimulationConfig) 
         return
     if scenario == "linear":
         runner = LinearRunner(hyperparam_path=hyperparam_path)
+        runner.run()
+        return
+    if scenario == "brownian":
+        runner = BrownianRunner(hyperparam_path=hyperparam_path)
         runner.run()
         return
     raise ValueError(f"未知のシナリオです: {scenario}")
@@ -191,6 +207,8 @@ def main() -> None:
         
         if scenario == "piecewise":
             metadata["config"]["piecewise"] = {"K": cfg.piecewise.K}
+        elif scenario == "brownian":
+            metadata["config"]["brownian"] = {"K": cfg.brownian.K, "std_S": cfg.brownian.std_S}
         
         script_paths = {
             "hyperparam_tuning": Path(__file__).resolve().parent / "hyperparam_tuning.py",

@@ -26,6 +26,7 @@ from code.config import (
     get_search_spaces_dict,
 )
 from code.data_gen import (
+    generate_brownian_piecewise_X_with_exog,
     generate_linear_X_with_exog,
     generate_piecewise_X_with_exog,
 )
@@ -222,6 +223,22 @@ def tune_methods_for_scenario(
     if truncation_horizon is None:
         truncation_horizon = cfg.tuning.truncation_horizon
 
+    tuning_objective = str(getattr(cfg.tuning, "objective", "mean")).strip()
+    drift_penalty_weight = float(getattr(cfg.tuning, "drift_penalty_weight", 0.0))
+    drift_window_frac = float(getattr(cfg.tuning, "drift_window_frac", 0.2))
+    supported_objectives = {
+        "mean",
+        "final",
+        "late_mean",
+        "mean_plus_drift",
+        "final_plus_drift",
+        "late_mean_plus_drift",
+    }
+    if tuning_objective not in supported_objectives:
+        raise ValueError(
+            f"未知の tuning.objective={tuning_objective}. 利用可能: {', '.join(sorted(supported_objectives))}"
+        )
+
     selected_methods = _normalize_methods(methods)
 
     default_fallback = get_default_hyperparams_dict()
@@ -302,6 +319,43 @@ def tune_methods_for_scenario(
         divide_by_n2 = bool(getattr(cfg.metric, "divide_by_n2", False))
         return compute_frobenius_error(S_hat, S_true, S_offline, error_normalization, divide_by_n2)
 
+    def _aggregate_tuning_time_series(err_ts: list[float], burn_in: int) -> float:
+        if not err_ts:
+            return penalty_value
+        eval_ts = err_ts[burn_in:] if burn_in < len(err_ts) else err_ts
+        if not eval_ts:
+            return penalty_value
+        arr = np.asarray(eval_ts, dtype=float)
+        if not np.all(np.isfinite(arr)):
+            return penalty_value
+
+        mean_val = float(np.mean(arr))
+        last_val = float(arr[-1])
+
+        frac = drift_window_frac
+        if not np.isfinite(frac) or frac <= 0:
+            frac = 0.2
+        frac = float(min(0.5, max(0.0, frac)))
+        win = max(1, int(round(len(arr) * frac))) if frac > 0 else 1
+        early_mean = float(np.mean(arr[:win]))
+        late_mean = float(np.mean(arr[-win:]))
+        drift = max(0.0, late_mean - early_mean)
+
+        if tuning_objective == "mean":
+            return mean_val
+        if tuning_objective == "final":
+            return last_val
+        if tuning_objective == "late_mean":
+            return late_mean
+        if tuning_objective == "mean_plus_drift":
+            return mean_val + drift_penalty_weight * drift
+        if tuning_objective == "final_plus_drift":
+            return last_val + drift_penalty_weight * drift
+        if tuning_objective == "late_mean_plus_drift":
+            return late_mean + drift_penalty_weight * drift
+        # should be unreachable due to validation above
+        return penalty_value
+
     def objective_pp(trial: optuna.trial.Trial) -> float:
         # PP は r,q も最適化対象（未定義ならフォールバック）
         try:
@@ -359,10 +413,8 @@ def tune_methods_for_scenario(
                     for t in range(len(S_trunc))
                 ]
                 err_ts_eval = err_ts[burn_in:] if burn_in < len(err_ts) else err_ts
-                mean_err = float(np.mean(err_ts_eval)) if err_ts_eval else penalty_value
-                if not np.isfinite(mean_err):
-                    mean_err = penalty_value
-                errs.append(mean_err)
+                value = _aggregate_tuning_time_series(err_ts_eval, burn_in=0)
+                errs.append(float(value))
             except Exception:
                 errs.append(penalty_value)
         return float(np.mean(errs))
@@ -419,10 +471,8 @@ def tune_methods_for_scenario(
                     for t in range(len(S_trunc))
                 ]
                 err_ts_eval = err_ts[burn_in:] if burn_in < len(err_ts) else err_ts
-                mean_err = float(np.mean(err_ts_eval)) if err_ts_eval else penalty_value
-                if not np.isfinite(mean_err):
-                    mean_err = penalty_value
-                errs.append(mean_err)
+                value = _aggregate_tuning_time_series(err_ts_eval, burn_in=0)
+                errs.append(float(value))
             except Exception:
                 errs.append(penalty_value)
         return float(np.mean(errs))
@@ -495,12 +545,12 @@ def tune_methods_for_scenario(
                         T_init=T_init,
                     )
                     estimates_pc, _ = pc.run(X, Z)
-                err_ts = [_compute_error_for_tuning(estimates_pc[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
-                err_ts_eval = err_ts[burn_in:] if burn_in < len(err_ts) else err_ts
-                mean_err = float(np.mean(err_ts_eval)) if err_ts_eval else penalty_value
-                if not np.isfinite(mean_err):
-                    mean_err = penalty_value
-                errs.append(mean_err)
+                err_ts = [
+                    _compute_error_for_tuning(estimates_pc[t], S_trunc[t], S_offline)
+                    for t in range(len(S_trunc))
+                ]
+                value = _aggregate_tuning_time_series(err_ts, burn_in=burn_in)
+                errs.append(float(value))
             except Exception:
                 errs.append(penalty_value)
         return float(np.mean(errs))
@@ -582,12 +632,12 @@ def tune_methods_for_scenario(
                         T_init=T_init,
                     )
                     estimates_co, _ = co.run(X, Z)
-                err_ts = [_compute_error_for_tuning(estimates_co[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
-                err_ts_eval = err_ts[burn_in:] if burn_in < len(err_ts) else err_ts
-                mean_err = float(np.mean(err_ts_eval)) if err_ts_eval else penalty_value
-                if not np.isfinite(mean_err):
-                    mean_err = penalty_value
-                errs.append(mean_err)
+                err_ts = [
+                    _compute_error_for_tuning(estimates_co[t], S_trunc[t], S_offline)
+                    for t in range(len(S_trunc))
+                ]
+                value = _aggregate_tuning_time_series(err_ts, burn_in=burn_in)
+                errs.append(float(value))
             except Exception:
                 errs.append(penalty_value)
         return float(np.mean(errs))
@@ -669,12 +719,12 @@ def tune_methods_for_scenario(
                         T_init=T_init,
                     )
                     estimates_sgd, _ = sgd.run(X, Z)
-                err_ts = [_compute_error_for_tuning(estimates_sgd[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
-                err_ts_eval = err_ts[burn_in:] if burn_in < len(err_ts) else err_ts
-                mean_err = float(np.mean(err_ts_eval)) if err_ts_eval else penalty_value
-                if not np.isfinite(mean_err):
-                    mean_err = penalty_value
-                errs.append(mean_err)
+                err_ts = [
+                    _compute_error_for_tuning(estimates_sgd[t], S_trunc[t], S_offline)
+                    for t in range(len(S_trunc))
+                ]
+                value = _aggregate_tuning_time_series(err_ts, burn_in=burn_in)
+                errs.append(float(value))
             except Exception:
                 errs.append(penalty_value)
         return float(np.mean(errs))
@@ -728,11 +778,14 @@ def tune_methods_for_scenario(
             model_pg = ProximalGradientBatchSEM(N, config_pg)
             try:
                 estimates_pg, _ = model_pg.run(X, Z)
-                err_ts = [_compute_error_for_tuning(estimates_pg[t], S_trunc[t], S_offline) for t in range(len(S_trunc))]
-                mean_err = float(np.mean(err_ts))
-                if not np.isfinite(mean_err):
-                    mean_err = penalty_value
-                errs.append(mean_err)
+                err_ts = [
+                    _compute_error_for_tuning(estimates_pg[t], S_trunc[t], S_offline)
+                    for t in range(len(S_trunc))
+                ]
+                burn_in_cfg = int(getattr(cfg.metric, "burn_in", 0))
+                burn_in = max(0, burn_in_cfg)
+                value = _aggregate_tuning_time_series(err_ts, burn_in=burn_in)
+                errs.append(float(value))
             except Exception:
                 errs.append(penalty_value)
         return float(np.mean(errs))
@@ -938,6 +991,11 @@ def tune_methods_for_scenario(
         "tuning_trials": tuning_trials,
         "tuning_runs_per_trial": tuning_runs_per_trial,
         "truncation_horizon": truncation_horizon,
+        "tuning_objective": {
+            "objective": tuning_objective,
+            "drift_penalty_weight": drift_penalty_weight,
+            "drift_window_frac": drift_window_frac,
+        },
         "generator_kwargs": {key: to_python_value(val) for key, val in generator_kwargs.items()},
         "metric": {
             "error_normalization": error_normalization,
@@ -1054,6 +1112,60 @@ def tune_linear_all_methods(
         methods=methods,
     )
     summary["generator_name"] = "code.data_gen.generate_linear_X_with_exog"
+    return best, summary
+
+
+def tune_brownian_all_methods(
+    N: Optional[int] = None,
+    T: Optional[int] = None,
+    sparsity: Optional[float] = None,
+    max_weight: Optional[float] = None,
+    std_e: Optional[float] = None,
+    K: Optional[int] = None,
+    std_S: Optional[float] = None,
+    tuning_trials: Optional[int] = None,
+    tuning_runs_per_trial: Optional[int] = None,
+    seed: Optional[int] = None,
+    search_space_overrides: Optional[Dict[str, Dict[str, Any]]] = None,
+    methods: Optional[Iterable[Any]] = None,
+) -> Tuple[Dict[str, Dict[str, Any]], Dict[str, Any]]:
+    """
+    Brownian（piecewise Brownian）シナリオのハイパーパラメータチューニング。
+    config.py から設定を取得する。引数で明示的に指定した場合は上書き。
+    """
+    cfg = get_config()
+
+    _N = N if N is not None else cfg.common.N
+    _T = T if T is not None else cfg.common.T
+    _sparsity = sparsity if sparsity is not None else cfg.common.sparsity
+    _max_weight = max_weight if max_weight is not None else cfg.common.max_weight
+    _std_e = std_e if std_e is not None else cfg.common.std_e
+    _K = K if K is not None else cfg.brownian.K
+    _std_S = std_S if std_S is not None else cfg.brownian.std_S
+
+    generator_kwargs = {
+        "N": _N,
+        "T": _T,
+        "sparsity": _sparsity,
+        "max_weight": _max_weight,
+        "std_e": _std_e,
+        "K": _K,
+        "std_S": _std_S,
+        "s_type": cfg.data_gen.s_type,
+        "t_min": cfg.data_gen.t_min,
+        "t_max": cfg.data_gen.t_max,
+        "z_dist": cfg.data_gen.z_dist,
+    }
+    best, summary = tune_methods_for_scenario(
+        generator=generate_brownian_piecewise_X_with_exog,
+        generator_kwargs=generator_kwargs,
+        tuning_trials=tuning_trials,
+        tuning_runs_per_trial=tuning_runs_per_trial,
+        seed=seed,
+        search_space_overrides=search_space_overrides,
+        methods=methods,
+    )
+    summary["generator_name"] = "code.data_gen.generate_brownian_piecewise_X_with_exog"
     return best, summary
 
 

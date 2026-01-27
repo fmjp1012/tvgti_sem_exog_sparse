@@ -93,6 +93,17 @@ class TuningParams:
     tuning_runs_per_trial: int   # 各試行での実行回数（平均を取る）
     truncation_horizon: int    # チューニング時の打ち切りステップ数
     tuning_seed: int             # チューニング用シード
+    # チューニング時の目的関数（時系列誤差 err_ts から 1 つの値に集約する方法）
+    # - "mean": burn-in以降の平均（従来）
+    # - "final": burn-in以降の最終値
+    # - "late_mean": burn-in以降の末尾ウィンドウ平均
+    # - "*_plus_drift": 上記に加えて、末尾が上がる（ドリフトする）場合にペナルティを加える
+    objective: str
+    # ドリフト（末尾平均 - 先頭平均）が正のときに足すペナルティの重み
+    # 0.0 ならドリフトは無視（従来互換）
+    drift_penalty_weight: float
+    # ドリフト計算に使う「先頭/末尾ウィンドウ」の割合（0<frac<=0.5推奨）
+    drift_window_frac: float
 
 
 @dataclass
@@ -458,7 +469,7 @@ CONFIG_MAIN = SimulationConfig(
     # Brownianシナリオのパラメータ
     brownian=BrownianParams(
         K=4,
-        std_S=0.05,
+        std_S=0.1,
     ),
     
     # データ生成パラメータ
@@ -475,6 +486,9 @@ CONFIG_MAIN = SimulationConfig(
         tuning_runs_per_trial=1,    # 各試行の平均を取る回数
         truncation_horizon=200,     # チューニング時に使う時系列長（X[:, :T_tune]）
         tuning_seed=4,              # チューニング用seed
+        objective="mean_plus_drift",
+        drift_penalty_weight=0.0,
+        drift_window_frac=0.2,
     ),
     
     # ハイパーパラメータ探索範囲
@@ -719,6 +733,9 @@ CONFIG_TEST = SimulationConfig(
         tuning_runs_per_trial=1,
         truncation_horizon=30,     # 打ち切りも短く
         tuning_seed=4,
+        objective="mean",
+        drift_penalty_weight=0.0,
+        drift_window_frac=0.2,
     ),
     
     # 探索範囲（本番と同じ）
