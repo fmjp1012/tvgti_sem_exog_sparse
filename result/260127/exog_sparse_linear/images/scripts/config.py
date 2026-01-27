@@ -664,6 +664,7 @@ CONFIG_MAIN = SimulationConfig(
     # piecewise_K=4_N=20_T=1000 のハイパラ（251201）
     # hyperparam_json=Path("result/251201/exog_sparse_tuning/piecewise_best_hyperparams_20251201_185134.json"),
     hyperparam_json=Path("result/260126/exog_sparse_piecewise/mixed_hyperparams_20260126.json"),
+    # hyperparam_json=None
 )
 
 # =============================================================================

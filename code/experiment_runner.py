@@ -360,11 +360,11 @@ class BaseExperimentRunner(ABC):
         plt.xlabel("t")
         
         if normalization == "offline_solution":
-            ylabel = "Average Error Ratio (vs Offline)"
+            ylabel = r"Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^* - S_{\mathrm{offline}}\|_F^2}$"
         else:
-            ylabel = "Average NSE"
+            ylabel = r"Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^*\|_F^2}$"
         if divide_by_n2:
-            ylabel = ylabel + " / $N^2$"
+            ylabel = ylabel + r"\,$/\,N^2$"
         plt.ylabel(ylabel)
         
         plt.grid(True, which="both")
