@@ -31,7 +31,7 @@ from models.pg_batch import ProximalGradientBatchSEM, ProximalGradientConfig
 from models.tvgti_pc.prediction_correction_sem import PredictionCorrectionSEM as PCSEM
 from models.tvgti_pc.prediction_correction_sem_noexog import PredictionCorrectionSEMNoExog as PCSEMNoExog
 from utils.io.plotting import apply_style, plot_heatmaps, plot_heatmaps_suite
-from utils.io.results import backup_script, create_result_dir, make_result_filename, save_json
+from utils.io.results import backup_script, create_result_dir, make_result_filename, save_json, get_run_id
 from utils.offline_solver import solve_offline_sem_lasso_batch
 from utils.metrics import compute_error_series
 from utils.metrics import compute_normalized_error
@@ -812,6 +812,7 @@ def main(hyperparam_path: Optional[Path] = None) -> None:
     meta_name = f"{Path(filename).stem}_meta.json"
     save_json(metadata, Path(result_dir), name=meta_name)
 
+    run_id = get_run_id()
     used_hyperparams_payload = {
         "hyperparam_json": str(hyperparam_path) if hyperparam_path is not None else None,
         "hyperparam_json_content": loaded_hyperparams,
@@ -834,7 +835,7 @@ def main(hyperparam_path: Optional[Path] = None) -> None:
         "offline_lambda_l1": offline_lambda_l1,
         "note": "Resolved from hyperparam_json if provided; otherwise config defaults.",
     }
-    save_json(used_hyperparams_payload, Path(result_dir), name="used_hyperparams.json")
+    save_json(used_hyperparams_payload, Path(result_dir), name=f"used_hyperparams_ts={run_id}.json")
 
 
 if __name__ == "__main__":

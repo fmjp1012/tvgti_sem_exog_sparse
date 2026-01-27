@@ -1,10 +1,18 @@
 from __future__ import annotations
+import os
 import shutil
 import json
 import datetime as dt
 from pathlib import Path
 from typing import Dict, Any, Optional
 import hashlib
+
+
+_RUN_ID = os.getenv("TVG_RUN_ID") or dt.datetime.now().strftime("%Y%m%d_%H%M%S_%f")
+
+
+def get_run_id() -> str:
+    return _RUN_ID
 
 
 def create_result_dir(root: Path, scenario: str, extra_tag: Optional[str] = None) -> Path:
@@ -41,7 +49,13 @@ def save_json(meta: Dict[str, Any], dest_dir: Path, name: str = "meta.json") -> 
     return p
 
 
-def make_result_filename(prefix: str, params: Dict[str, Any], suffix: str = ".png") -> str:
+def make_result_filename(
+    prefix: str,
+    params: Dict[str, Any],
+    suffix: str = ".png",
+    run_id: Optional[str] = None,
+    add_timestamp: bool = True,
+) -> str:
     """
     Build a standardized result filename with stable key ordering.
     Example: prefix=piecewise, params={"N":20,"T":1000,"seed":3} ->
@@ -55,4 +69,7 @@ def make_result_filename(prefix: str, params: Dict[str, Any], suffix: str = ".pn
     if len(name) > 200:
         h = hashlib.sha1(core.encode("utf-8")).hexdigest()[:8]
         name = f"{prefix}_{h}"
+    rid = run_id if run_id is not None else (_RUN_ID if add_timestamp else None)
+    if rid:
+        name = f"{name}_ts={rid}"
     return f"{name}{suffix}"

@@ -418,7 +418,7 @@ class SimulationConfig:
 # True: テスト用の軽量設定（プログラム動作確認用、すぐに終わる）
 # False: 本番用設定（実際のシミュレーション用）
 # USE_TEST_CONFIG = True
-USE_TEST_CONFIG = True
+USE_TEST_CONFIG = False
 
 # =============================================================================
 # ★★★ 設定を変更するにはここを編集してください ★★★
@@ -444,7 +444,7 @@ CONFIG_MAIN = SimulationConfig(
         sparsity=0.7,      # スパース性（0要素の割合）
         max_weight=0.5,    # Sの非ゼロ重みの上限（生成時）
         std_e=0.05,        # 観測ノイズの標準偏差
-        seed=3,            # 乱数シード基点（trialごとにseed+i）
+        seed=100000,            # 乱数シード基点（trialごとにseed+i）
     ),
     
     # Piecewiseシナリオのパラメータ
@@ -473,7 +473,7 @@ CONFIG_MAIN = SimulationConfig(
     tuning=TuningParams(
         tuning_trials=500,          # Optuna試行回数
         tuning_runs_per_trial=1,    # 各試行の平均を取る回数
-        truncation_horizon=1000,     # チューニング時に使う時系列長（X[:, :T_tune]）
+        truncation_horizon=200,     # チューニング時に使う時系列長（X[:, :T_tune]）
         tuning_seed=4,              # チューニング用seed
     ),
     

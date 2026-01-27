@@ -444,7 +444,7 @@ CONFIG_MAIN = SimulationConfig(
         sparsity=0.7,      # スパース性（0要素の割合）
         max_weight=0.5,    # Sの非ゼロ重みの上限（生成時）
         std_e=0.05,        # 観測ノイズの標準偏差
-        seed=3,            # 乱数シード基点（trialごとにseed+i）
+        seed=100000,            # 乱数シード基点（trialごとにseed+i）
     ),
     
     # Piecewiseシナリオのパラメータ

@@ -32,7 +32,7 @@ from code.hyperparam_utils import (
 from code.method_executor import MethodExecutor, MethodFlags, TrialResult
 from utils.formatting import fmt_value, print_block
 from utils.io.plotting import apply_style, plot_heatmaps
-from utils.io.results import backup_script, create_result_dir, make_result_filename, save_json
+from utils.io.results import backup_script, create_result_dir, make_result_filename, save_json, get_run_id
 from utils.offline_solver import solve_offline_sem_lasso_batch
 from utils.repro import collect_environment_info
 
@@ -594,6 +594,7 @@ class BaseExperimentRunner(ABC):
         meta_name = f"{Path(filename).stem}_meta.json"
         save_json(metadata, result_dir, name=meta_name)
 
+        run_id = get_run_id()
         used_hyperparams_payload = {
             "hyperparam_json": str(self.hyperparam_path) if self.hyperparam_path else None,
             "hyperparam_json_content": hyperparam_json_content,
@@ -601,7 +602,7 @@ class BaseExperimentRunner(ABC):
             "offline_lambda_l1": self.hyperparams.offline_lambda_l1,
             "note": "Resolved from hyperparam_json if provided; otherwise config defaults.",
         }
-        save_json(used_hyperparams_payload, result_dir, name="used_hyperparams.json")
+        save_json(used_hyperparams_payload, result_dir, name=f"used_hyperparams_ts={run_id}.json")
 
     def run(self) -> ExperimentResult:
         """
