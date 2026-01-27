@@ -1,0 +1,11 @@
+result/251222/exog_sparse_piecewise/images/piecewise_K=1_N=20_T=2000_lambdaS=9.558103531638434e-05_maxweight=0.5_mulambda=0.14386343503607227_num_trials=100_q=20_r=600_rho=0.004400494296868914_seed=3_stde=0.05.png
+result/251226/exog_sparse_piecewise/images/piecewise_K=1_N=20_T=10000_lambdaS=9.558103531638434e-05_maxweight=0.5_mulambda=0.14386343503607227_num_trials=100_q=20_r=600_rho=0.004400494296868914_seed=3_stde=0.05.png
+result/260127/exog_sparse_piecewise/images/piecewise_K=4_N=20_T=1000_lambdaS=0.0006242840465350341_maxweight=0.5_mulambda=3.554137951515271_n2=0_norm=offline_num_trials=100_q=4_r=20_rho=2.6873737842405787e-05_seed=3_stde=0.05.png
+result/260127/exog_sparse_piecewise/images/piecewise_K=4_N=20_T=1000_lambdaS=0.0006242840465350341_maxweight=0.5_mulambda=3.554137951515271_n2=0_norm=true_num_trials=100_q=4_r=20_rho=2.6873737842405787e-05_seed=3_stde=0.05.png
+result/260127/exog_sparse_piecewise/images/piecewise_K=4_N=20_T=1000_lambdaS=0.0006242840465350341_maxweight=0.5_mulambda=3.554137951515271_n2=1_norm=offline_num_trials=100_q=4_r=20_rho=2.6873737842405787e-05_seed=3_stde=0.05.png
+result/260127/exog_sparse_piecewise/images/piecewise_K=4_N=20_T=1000_lambdaS=0.0006242840465350341_maxweight=0.5_mulambda=3.554137951515271_n2=1_norm=true_num_trials=100_q=4_r=20_rho=2.6873737842405787e-05_seed=3_stde=0.05.png
+
+result/260127/exog_sparse_linear/images/linear_N=20_T=1000_lambdaS=0.0006242840465350341_maxweight=0.5_mulambda=3.554137951515271_n2=0_norm=offline_num_trials=100_q=4_r=20_rho=2.6873737842405787e-05_seed=3_stde=0.05.png
+result/260127/exog_sparse_linear/images/linear_N=20_T=1000_lambdaS=0.0006242840465350341_maxweight=0.5_mulambda=3.554137951515271_n2=0_norm=true_num_trials=100_q=4_r=20_rho=2.6873737842405787e-05_seed=3_stde=0.05.png
+result/260127/exog_sparse_linear/images/linear_N=20_T=1000_lambdaS=0.0006242840465350341_maxweight=0.5_mulambda=3.554137951515271_n2=1_norm=offline_num_trials=100_q=4_r=20_rho=2.6873737842405787e-05_seed=3_stde=0.05.png
+result/260127/exog_sparse_linear/images/linear_N=20_T=1000_lambdaS=0.0006242840465350341_maxweight=0.5_mulambda=3.554137951515271_n2=1_norm=true_num_trials=100_q=4_r=20_rho=2.6873737842405787e-05_seed=3_stde=0.05.png
