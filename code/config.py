@@ -418,7 +418,7 @@ class SimulationConfig:
 # True: テスト用の軽量設定（プログラム動作確認用、すぐに終わる）
 # False: 本番用設定（実際のシミュレーション用）
 # USE_TEST_CONFIG = True
-USE_TEST_CONFIG = False
+USE_TEST_CONFIG = True
 
 # =============================================================================
 # ★★★ 設定を変更するにはここを編集してください ★★★
@@ -494,7 +494,7 @@ CONFIG_MAIN = SimulationConfig(
                 log=False,
                 type="categorical",
                 step=None,
-                choices=[20, 40, 200, 400, 600, 800, 1000],
+                choices=[20, 40, 200]
             ),
             q=SearchRange(
                 low=0,
@@ -663,8 +663,8 @@ CONFIG_MAIN = SimulationConfig(
     skip_simulation=False,
     # piecewise_K=4_N=20_T=1000 のハイパラ（251201）
     # hyperparam_json=Path("result/251201/exog_sparse_tuning/piecewise_best_hyperparams_20251201_185134.json"),
-    hyperparam_json=Path("result/260126/exog_sparse_piecewise/mixed_hyperparams_20260126.json"),
-    # hyperparam_json=None
+    # hyperparam_json=Path("result/260126/exog_sparse_piecewise/mixed_hyperparams_20260126.json"),
+    hyperparam_json=None
 )
 
 # =============================================================================

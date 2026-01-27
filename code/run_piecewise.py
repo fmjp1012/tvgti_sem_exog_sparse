@@ -812,6 +812,30 @@ def main(hyperparam_path: Optional[Path] = None) -> None:
     meta_name = f"{Path(filename).stem}_meta.json"
     save_json(metadata, Path(result_dir), name=meta_name)
 
+    used_hyperparams_payload = {
+        "hyperparam_json": str(hyperparam_path) if hyperparam_path is not None else None,
+        "hyperparam_json_content": loaded_hyperparams,
+        "resolved_hyperparams": {
+            "pp": {"r": r, "q": q, "rho": rho, "mu_lambda": mu_lambda, "lambda_S": lambda_S},
+            "pp_sgd": {"r": r_pp_sgd, "q": q_pp_sgd, "rho": rho_pp_sgd, "mu_lambda": mu_lambda_pp_sgd, "lambda_S": lambda_S_pp_sgd},
+            "pc": {"lambda_reg": lambda_reg, "alpha": alpha, "beta": beta, "gamma": gamma, "P": P, "C": C},
+            "co": {"lambda_reg": lambda_reg, "alpha": alpha, "beta_co": beta_co, "gamma": gamma, "C": C},
+            "sgd": {"lambda_reg": sgd_lambda_reg, "alpha": sgd_alpha, "beta_sgd": beta_sgd, "C": C},
+            "pg": {
+                "lambda_reg": lambda_pg,
+                "step_scale": step_scale_pg,
+                "step_size": step_size_pg,
+                "use_fista": use_fista_pg,
+                "use_backtracking": use_backtracking_pg,
+                "max_iter": max_iter_pg,
+                "tol": tol_pg,
+            },
+        },
+        "offline_lambda_l1": offline_lambda_l1,
+        "note": "Resolved from hyperparam_json if provided; otherwise config defaults.",
+    }
+    save_json(used_hyperparams_payload, Path(result_dir), name="used_hyperparams.json")
+
 
 if __name__ == "__main__":
     main()

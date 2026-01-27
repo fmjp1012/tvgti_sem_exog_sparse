@@ -494,7 +494,7 @@ CONFIG_MAIN = SimulationConfig(
                 log=False,
                 type="categorical",
                 step=None,
-                choices=[20, 40, 200, 400, 600, 800, 1000],
+                choices=[20, 40, 200]
             ),
             q=SearchRange(
                 low=0,

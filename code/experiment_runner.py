@@ -594,6 +594,15 @@ class BaseExperimentRunner(ABC):
         meta_name = f"{Path(filename).stem}_meta.json"
         save_json(metadata, result_dir, name=meta_name)
 
+        used_hyperparams_payload = {
+            "hyperparam_json": str(self.hyperparam_path) if self.hyperparam_path else None,
+            "hyperparam_json_content": hyperparam_json_content,
+            "resolved_hyperparams": hp_dict,
+            "offline_lambda_l1": self.hyperparams.offline_lambda_l1,
+            "note": "Resolved from hyperparam_json if provided; otherwise config defaults.",
+        }
+        save_json(used_hyperparams_payload, result_dir, name="used_hyperparams.json")
+
     def run(self) -> ExperimentResult:
         """
         実験を実行する。
