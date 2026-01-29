@@ -486,7 +486,7 @@ CONFIG_MAIN = SimulationConfig(
         tuning_runs_per_trial=1,    # 各試行の平均を取る回数
         truncation_horizon=200,     # チューニング時に使う時系列長（X[:, :T_tune]）
         tuning_seed=4,              # チューニング用seed
-        objective="mean",
+        objective="mean_plus_drift",
         drift_penalty_weight=0.0,
         drift_window_frac=0.2,
     ),

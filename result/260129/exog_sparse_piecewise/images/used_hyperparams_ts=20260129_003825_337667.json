@@ -1,0 +1,90 @@
+{
+  "hyperparam_json": "result/260129/exog_sparse_tuning/piecewise_best_hyperparams_20260129_004834.json",
+  "hyperparam_json_content": {
+    "pp": {
+      "r": 20,
+      "q": 10,
+      "rho": 4.847519376503661e-08,
+      "mu_lambda": 1.9980062167943393,
+      "lambda_S": 7.31190462944953e-11
+    },
+    "pp_sgd": {
+      "r": 1,
+      "q": 1,
+      "rho": 0.001,
+      "mu_lambda": 1.0,
+      "lambda_S": 0.01
+    },
+    "pc": {
+      "lambda_reg": 0.0013683843233135084,
+      "alpha": 1.3054814002043518,
+      "beta": 4.06946414758469,
+      "gamma": 0.8821781630238712,
+      "P": 1,
+      "C": 1
+    },
+    "co": {
+      "beta_co": 9.88146201197984
+    },
+    "sgd": {
+      "beta_sgd": 0.0003739272768292859
+    },
+    "pg": {
+      "lambda_reg": 0.001,
+      "step_scale": 1.0,
+      "step_size": null,
+      "use_fista": true,
+      "use_backtracking": false,
+      "max_iter": 500,
+      "tol": 0.0001
+    }
+  },
+  "resolved_hyperparams": {
+    "pp": {
+      "r": 20,
+      "q": 10,
+      "rho": 4.847519376503661e-08,
+      "mu_lambda": 1.9980062167943393,
+      "lambda_S": 7.31190462944953e-11
+    },
+    "pp_sgd": {
+      "r": 1,
+      "q": 1,
+      "rho": 0.001,
+      "mu_lambda": 1.0,
+      "lambda_S": 0.01
+    },
+    "pc": {
+      "lambda_reg": 0.0013683843233135084,
+      "alpha": 1.3054814002043518,
+      "beta": 4.06946414758469,
+      "gamma": 0.8821781630238712,
+      "P": 1,
+      "C": 1
+    },
+    "co": {
+      "lambda_reg": 0.0013683843233135084,
+      "alpha": 1.3054814002043518,
+      "beta_co": 9.88146201197984,
+      "gamma": 0.8821781630238712,
+      "C": 1
+    },
+    "sgd": {
+      "lambda_reg": 0.0013683843233135084,
+      "alpha": 1.3054814002043518,
+      "beta_sgd": 0.0003739272768292859,
+      "C": 1
+    },
+    "pg": {
+      "lambda_reg": 0.001,
+      "step_scale": 1.0,
+      "step_size": null,
+      "use_fista": true,
+      "use_backtracking": false,
+      "max_iter": 500,
+      "tol": 0.0001
+    }
+  },
+  "offline_lambda_l1": 0.03162277660168379,
+  "note": "Resolved from hyperparam_json if provided; otherwise config defaults."
+}
