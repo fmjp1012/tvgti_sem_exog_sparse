@@ -627,10 +627,11 @@ def main(hyperparam_path: Optional[Path] = None) -> None:
         plt.yscale('log')
         plt.xlim(left=0, right=T)
         plt.xlabel('t')
+        avg_prefix = "Average " if int(num_trials) > 1 else ""
         if variant["normalization"] == "offline_solution":
-            ylabel = r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^* - S_{\mathrm{offline}}\|_F^2}$'
+            ylabel = avg_prefix + r'$\frac{\|\hat{S} - S^*\|_F^2}{\|S^* - S_{\mathrm{offline}}\|_F^2}$'
         else:
-            ylabel = r'Average $\frac{\|\hat{S} - S^*\|_F^2}{\|S^*\|_F^2}$'
+            ylabel = avg_prefix + r'$\frac{\|\hat{S} - S^*\|_F^2}{\|S^*\|_F^2}$'
         if variant["divide_by_n2"]:
             ylabel = ylabel + r'\,$/\,N^2$'
         plt.ylabel(ylabel)
